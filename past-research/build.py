@@ -68,7 +68,7 @@ html='''<!doctype html>
 </header>
 </div>
 <main id="main">'''+sections+'''
-<footer><p><a href="../research-page/index.html">Active Research</a></p><p>Numbers link to Google Scholar citations, checked November 18, 2026.</p><p><a href="https://scholar.google.com/scholar?hl=en&amp;q=author%3A%22Jianwen+Zhu%22+Toronto">Explore on Google Scholar</a> · <a href="publications.json">Publication data</a></p></footer></main>
+<footer><p><a href="../research-page/index.html">Active Research</a></p></footer></main>
 <script>
 const header = document.querySelector('.stationary-header');
 new ResizeObserver(() => {
