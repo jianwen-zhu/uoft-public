@@ -1,0 +1,1500 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>YTL Language Reference Manual 2.0</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="manual.css" />
+</head>
+<body>
+<h1 id="ytl-language-reference-manual-20">YTL Language Reference Manual
+2.0</h1>
+<p>Jianwen Zhu</p>
+<p>Version 2.0</p>
+<h2 id="status-and-normative-language">Status and normative
+language</h2>
+<p>This document is the normative definition of YTL 2.0. The
+accompanying reference parser, elaborator, verifier, and interpreter
+implement this specification. Earlier 0.1 artifacts remain governed by
+the <a href="ytl-lrm.html">YTL 0.1 manual</a> and the <a
+href="ttl-lrm.html">TTL 0.1 manual</a>.</p>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>,
+<strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL
+NOT</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+<strong>MAY</strong>, and <strong>OPTIONAL</strong> are to be
+interpreted as described by RFC 2119 and RFC 8174 when, and only when,
+they appear in bold.</p>
+<p>Examples are illustrative unless a requirement explicitly makes them
+normative. Project plans, implementation notes, and design rationale do
+not extend this specification.</p>
+<h2 id="1-introduction">1. Introduction</h2>
+<h3 id="11-purpose-and-boundary">1.1 Purpose and boundary</h3>
+<p>YTL, the <strong>Yang Tensor Language</strong>, is a first-order
+functional language for computations over multidimensional arrays,
+called <strong>tensors</strong>. A tensor maps coordinates to element
+values; each independent coordinate dimension is called an
+<strong>axis</strong>. “First-order” means functions may be called but
+are not passed or returned as values. “Functional” means expressions
+produce immutable values rather than updating them in place.</p>
+<p>YTL is intended for mathematical tensor programs: machine-learning
+models, structured tensor algorithms, and interconnection networks. Its
+compile-time composition mechanisms are also intended to support
+hardware construction in future versions. A reference implementation
+evaluates YTL and TTL directly; independent compilers may consume TTL
+for CPUs, GPUs, tensor accelerators, or hardware-description flows.</p>
+<p>YTL exposes the values a computation produces and the mathematical
+relationships among their axes. It does not prescribe how those values
+are stored or scheduled. Physical layout, tiling, kernel boundaries,
+memory placement, synchronization, machine-code generation, checkpoint
+formats, tokenization, and host orchestration are outside the language.
+The intended implementation targets motivate this separation between
+inherent computation and implementation detail, but none is part of the
+language semantics.</p>
+<p>An ordinary programming language typically describes arrays through
+ordered integer positions and describes their computation through loops,
+indexing, mutation, and control flow. A tensor library improves the
+notation but usually continues to identify a dimension as “axis 1” or
+“the last axis.” Correctness then depends on knowledge that is absent
+from the program: which position is the token dimension, which
+equal-sized dimension is the head dimension, and which dimensions a
+helper silently preserves.</p>
+<p>YTL instead makes coordinate meaning a first-class citizen of the
+language. A tensor type names each independent coordinate dimension, and
+tensor expressions align those names. A misspelled, swapped, or
+semantically unrelated dimension is therefore a type error even when
+every integer extent happens to agree. Expressions derive their result
+types from their operands and operations; a left-hand side does not
+supply a missing shape.</p>
+<p>Before execution, YTL source is <em>elaborated</em>: compile-time
+computation is evaluated, helper functions are specialized and inlined,
+shorthand is expanded, and structured source is reduced to a finite
+graph of explicit tensor primitives. The resulting language is TTL, the
+<strong>Tiny Tensor Language</strong>. This separation lets YTL remain
+pleasant for authors while giving interpreters and downstream compilers
+a finite, explicit, implementation-neutral input.</p>
+<h3 id="12-vocabulary">1.2 Vocabulary</h3>
+<p>The following terms are used throughout this manual:</p>
+<ul>
+<li>An <strong>element type</strong> describes one tensor element, for
+example <code>f32</code>.</li>
+<li>An <strong>axis</strong> names one independent coordinate dimension.
+Its identity and its extent are distinct properties.</li>
+<li>An <strong>axis domain</strong> is the set of valid coordinates for
+one axis occurrence. A static domain is described by an extent; a
+dynamic domain is supplied at runtime for each coordinate assignment
+over its declared dependencies.</li>
+<li>A <strong>coordinate</strong> is a finite mapping that chooses one
+position for every named axis of a tensor.</li>
+<li>A <strong>tensor</strong> maps every valid named coordinate to one
+element.</li>
+<li>The <strong>rank</strong> of a tensor is its number of axes. A
+<strong>scalar</strong> is a rank-zero tensor.</li>
+<li>A <strong>value</strong> is an immutable scalar or tensor. A
+function may also return a fixed list of values, called a
+<strong>multiple result</strong>.</li>
+<li>A <strong>tensor type</strong> consists of an element type and a
+finite mapping from named axis identities to axis domains. The mapping
+has no inter-axis order.</li>
+<li>A <strong>static parameter</strong> is a name declared between
+<code>[</code> and <code>]</code> in a function header and resolved
+during elaboration. A <strong>value parameter</strong> is declared
+between <code>(</code> and <code>)</code> and receives a runtime
+value.</li>
+<li>A <strong>module</strong> is one YTL source unit. A <strong>concrete
+axis</strong> is one module-wide identity. A <strong>generic
+axis</strong> is an axis placeholder declared between <code>[</code> and
+<code>]</code> in a function header and specialized with an axis
+identity at a call. It is not a runtime value parameter; runtime value
+parameters occur between <code>(</code> and <code>)</code>.</li>
+<li>A <strong>static value</strong> is known and evaluated during
+elaboration rather than tensor execution.</li>
+<li>A <strong>primitive</strong> is a compiler-owned tensor operation
+written with an <code>@</code>-name, such as <code>@einsum</code>.</li>
+<li>A <strong>target environment</strong> supplies scalar types and
+scalar operations. A declared <strong>target function</strong> is one
+such compiler-owned scalar operation; “target” does not imply a
+code-generation backend in this specification.</li>
+<li><strong>Elaboration</strong> is the compile-time reduction of YTL
+source to TTL. It must terminate and produce a finite TTL module;
+runtime tensor values cannot determine the structure of that
+module.</li>
+<li><strong>TTL</strong>, the Tiny Tensor Language, is the flat, fully
+typed, primitive-only language produced by elaboration.</li>
+<li>An axis <strong>scope</strong> is a
+<code>let [axes] ... in ...</code> expression and its lexical
+region.</li>
+<li>A scope's <strong>prefix</strong> is the named coordinate
+environment established by its header together with the environments of
+its enclosing scopes.</li>
+<li>A <strong>fibre</strong> is the remaining tensor seen after those
+prefix coordinates are fixed.</li>
+<li><strong>Lifting</strong> applies a fibre computation at every
+coordinate of a prefix and restores that prefix to the result type.</li>
+</ul>
+<h3 id="13-defining-ideas">1.3 Defining ideas</h3>
+<p>YTL combines five ideas:</p>
+<ol type="1">
+<li><strong>Semantic tensor types.</strong> Axis identity participates
+in type checking; equal extents do not imply alignment.</li>
+<li><strong>Einstein relationships.</strong> Mapping, broadcasting,
+contraction, gather, scatter, and coordinate transformation are stated
+with named axes rather than positional shape arithmetic.</li>
+<li><strong>A minimal primitive core.</strong> Rich source notation
+elaborates to a small, explicit, primitive-only language rather than
+accumulating independent runtime mechanisms.</li>
+<li><strong>Finite compile-time composition.</strong> Static parameters,
+conditionals, and structural recursion express families only when
+elaboration can reduce each admitted program to a finite TTL graph.</li>
+<li><strong>Scoped fibres.</strong> Repeated prefix axes may be factored
+out while the local expression describes only the mathematical fibre.
+Flattening restores an equivalent ordinary tensor graph.</li>
+</ol>
+<p>The first four ideas form the YTL 1.0 profile. Scoped fibres and
+APL-style map-reduce notation are the two additions made by YTL 2.0.</p>
+<h3 id="14-a-complete-program">1.4 A complete program</h3>
+<pre class="ttl"><code>import ttl.lang;
+
+axis batch, token, hidden, vocabulary;
+
+global embedding: f16[vocabulary hidden];
+
+function project[h, o](
+    x: f16[h],
+    weight: f16[o h]
+) -&gt; f16[o] :=
+    @einsum[h, o h -&gt; o](x, weight);
+
+export function logits(
+    x: f16[batch token hidden]
+) -&gt; f16[batch token vocabulary] :=
+    let [batch token] in
+        project[hidden, vocabulary](x, embedding);</code></pre>
+<p>The module declares four concrete axes and one persistent tensor
+value. <code>project</code> is generic over its two axis parameters. In
+<code>logits</code>, the scoped expression fixes one
+<code>batch, token</code> coordinate at a time. Its local call sees an
+<code>f16[hidden]</code> fibre of <code>x</code>, returns an
+<code>f16[vocabulary]</code> fibre, and lifting produces
+<code>f16[batch token vocabulary]</code>.</p>
+<h2 id="2-language-notation">2. Language notation</h2>
+<h3 id="21-lexical-structure">2.1 Lexical structure</h3>
+<p>Source text is Unicode, but every token defined by YTL 2.0 is ASCII.
+Whitespace and comments may occur between tokens and are discarded. They
+cannot occur within a token. Line comments begin with <code>//</code>.
+Block comments are delimited by <code>/*</code> and <code>*/</code> and
+do not nest.</p>
+<pre class="ebnf"><code>id          ::= /[A-Za-z_][A-Za-z0-9_]*/ ;
+integer     ::= /0|[1-9][0-9]*/ ;
+float       ::= /([0-9]+\.[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?/
+              | /[0-9]+[eE][+-]?[0-9]+/ ;
+at-id       ::= /@[A-Za-z_][A-Za-z0-9_]*/ ;
+perc-id     ::= /%(0|[1-9][0-9]*)/ ;
+dollar-id   ::= /\$[A-Za-z_][A-Za-z0-9_]*/ ;</code></pre>
+<p><code>at-id</code>, <code>perc-id</code>, and <code>dollar-id</code>
+are each one token; whitespace cannot separate the prefix from its body.
+Leading zeroes are forbidden in a multi-digit integer or
+<code>perc-id</code> number. Quoted words in the syntactic grammar are
+reserved tokens and are not <code>id</code> tokens. Quoted punctuation
+in that grammar also denotes tokens. A negative numeric literal consists
+of <code>-</code> followed by an unsigned literal.</p>
+<h3 id="22-ytl-10-common-grammar">2.2 YTL 1.0 common grammar</h3>
+<p><code>X?</code>, <code>X*</code>, and <code>X+</code> mean optional,
+zero-or-more, and one-or-more.</p>
+<p>The following is the complete grammar shared by YTL 1.0 and YTL
+2.0:</p>
+<pre class="ebnf"><code>program   ::= import* axis-decl* global* function* EOF ;
+import    ::= &quot;import&quot; id (&quot;.&quot; id)* &quot;;&quot; ;
+axis-decl ::= &quot;axis&quot;
+              axis-definition (&quot;,&quot; axis-definition)* &quot;;&quot; ;
+axis-definition ::= static-axis-definition | dynamic-axis-definition ;
+static-axis-definition ::= id (&quot;:=&quot; expr)? ;
+dynamic-axis-definition ::= dollar-id (&quot;over&quot; axis+)? ;
+global    ::= &quot;global&quot; id &quot;:&quot; type &quot;;&quot; ;
+
+function  ::= marker* &quot;function&quot; name static-params?
+              &quot;(&quot; (param (&quot;,&quot; param)*)? &quot;)&quot; (&quot;-&gt;&quot; results)?
+              (&quot;identity&quot; &quot;=&quot; expr)* (&quot;:=&quot; expr)? &quot;;&quot; ;
+marker    ::= &quot;export&quot; | &quot;reducer&quot; | &quot;target&quot; ;
+static-params ::= &quot;[&quot; id (&quot;,&quot; id)* &quot;]&quot; ;
+param      ::= id (&quot;:&quot; type)? ;
+results    ::= type | &quot;(&quot; type (&quot;,&quot; type)+ &quot;)&quot; ;
+
+type       ::= id (&quot;[&quot; dimension* &quot;]&quot;)? ;
+dimension  ::= static-dimension | dynamic-dimension ;
+static-dimension ::= id (&quot;:=&quot; expr)? ;
+dynamic-dimension ::= dollar-id ;
+
+binder     ::= id | perc-id
+             | &quot;(&quot; (id | perc-id) (&quot;,&quot; (id | perc-id))+ &quot;)&quot; ;
+binding    ::= binder (&quot;:&quot; results)? &quot;=&quot; expr ;
+
+expr       ::= let-expr | if-expr | infix-expr ;
+let-expr   ::= &quot;let&quot; binding (&quot;;&quot; binding)* &quot;in&quot; expr ;
+if-expr    ::= &quot;if&quot; expr &quot;then&quot; expr &quot;else&quot; expr ;
+infix-expr ::= prefix (binary-op prefix)* ;
+prefix     ::= (&quot;-&quot; | &quot;!&quot;) prefix | primary ;
+primary    ::= atom selector* ;
+atom       ::= literal | id | perc-id
+             | id static-args? &quot;(&quot; (expr (&quot;,&quot; expr)*)? &quot;)&quot;
+             | primitive
+             | &quot;(&quot; expr &quot;)&quot;
+             | &quot;(&quot; expr (&quot;,&quot; expr)+ &quot;)&quot; ;
+static-args ::= &quot;[&quot; static-arg (&quot;,&quot; static-arg)* &quot;]&quot; ;
+static-arg  ::= expr | axis ;
+selector   ::= &quot;[&quot; selection (&quot;,&quot; selection)* &quot;]&quot; ;
+selection  ::= axis &quot;=&quot; expr (&quot;:&quot; expr)? ;
+
+primitive  ::= at-id (&quot;[&quot; axis-spec &quot;]&quot;)?
+              &quot;(&quot; (expr (&quot;,&quot; expr)*)? &quot;)&quot;
+              ((&quot;map&quot; | &quot;reduce&quot;) &quot;=&quot; name)* ;
+axis-spec  ::= axis-pattern (&quot;,&quot; axis-pattern)* &quot;-&gt;&quot; axis-pattern ;
+axis-pattern ::= (dimension | axis-product)* ;
+axis-product ::= axis &quot;:=&quot; &quot;[&quot; axis (&quot;*&quot; axis)+ &quot;]&quot; ;
+
+name       ::= id | binary-op | &quot;!&quot; | at-id ;
+binary-op  ::= &quot;||&quot; | &quot;&amp;&amp;&quot; | &quot;==&quot; | &quot;!=&quot; | &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot;
+             | &quot;+&quot; | &quot;-&quot; | &quot;*&quot; | &quot;/&quot; | &quot;**&quot; ;
+axis       ::= id | dollar-id ;
+literal    ::= integer | float | &quot;inf&quot; | &quot;true&quot; | &quot;false&quot; ;</code></pre>
+<p>Thus an axis pattern is a sequence of only three item forms: an axis
+<code>a</code>, an axis whose domain is defined by an extent
+<code>a := expr</code>, or a one-level axis product
+<code>p := [a * b * ...]</code>. The <code>:=</code> token defines an
+axis domain, either by an extent or by a product; square brackets
+distinguish a structural product from an extent expression, and
+<code>*</code> separates the product's ordered factors. A product has at
+least two factors, and each factor is only an axis, so the notation
+defines neither aliasing nor a recursive or nested axis structure.</p>
+<p>YTL distinguishes definition from binding. <code>:=</code> defines
+the body of a declared function or the domain of an axis; <code>=</code>
+binds a local value, selector coordinate or range, or named clause
+within an enclosing construct. <code>==</code> compares values. These
+roles do not overlap.</p>
+<p>A literal is an ordinary YTL atom, and every primitive argument is an
+expression. Authors may therefore write literals and computed
+expressions directly:</p>
+<pre class="ttl"><code>function scale(x: f32[row]) -&gt; f32[row] := x * 2.0;
+
+function scale_explicit(x: f32[row]) -&gt; f32[row] :=
+    @einsum[row, -&gt; row](x, 2.0) map=*;</code></pre>
+<p>Elaboration names such immediate values and intermediate computations
+when it produces flat TTL. YTL source does not require authors to
+introduce those administrative bindings.</p>
+<p>Application source <strong>MUST NOT</strong> define a
+<code>perc-id</code>. A multiple binder and a multiple result contain at
+least two members by construction.</p>
+<h3 id="23-ytl-20-grammar-additions">2.3 YTL 2.0 grammar additions</h3>
+<p>YTL 2.0 changes exactly two expression productions. It adds a scoped
+<code>let</code>:</p>
+<pre class="ebnf"><code>expr       ::= let-expr | scope-expr | if-expr | infix-expr ;
+scope-expr ::= &quot;let&quot; &quot;[&quot; dimension+ &quot;]&quot;
+               (binding (&quot;;&quot; binding)*)? &quot;in&quot; expr ;</code></pre>
+<p>It also admits a map-reduce operator in an infix expression:</p>
+<pre class="ebnf"><code>infix-expr    ::= prefix ((binary-op | map-reduce-op) prefix)* ;
+map-reduce-op ::= name &quot;.&quot; name &quot;[&quot; axis+ &quot;]&quot; ;</code></pre>
+<p>Removing <code>scope-expr</code> and restricting
+<code>infix-expr</code> to <code>binary-op</code> recovers the complete
+YTL 1.0 grammar. No other syntax differs between the profiles.</p>
+<h3 id="24-operator-precedence">2.4 Operator precedence</h3>
+<p>Binary operators except <code>**</code> are left-associative.
+<code>**</code> is right-associative. Precedence from lowest to highest
+is:</p>
+<pre class="text"><code>||
+&amp;&amp;
+== !=
+&lt; &lt;= &gt; &gt;=
++ -
+* / and map-reduce operators
+**
+prefix - !
+selectors</code></pre>
+<p>A map-reduce operator is non-associative. Chained map-reduce
+expressions require parentheses.</p>
+<h2 id="3-type-system">3. Type system</h2>
+<h3 id="31-scalar-and-tensor-types">3.1 Scalar and tensor types</h3>
+<p>A scalar type is a dtype without axes:</p>
+<pre class="ttl"><code>bool
+i32
+f16
+f32</code></pre>
+<p>Appending named axes produces a tensor type:</p>
+<pre class="ttl"><code>f32[row column]
+f16[batch $token hidden]  // with axis $token over batch</code></pre>
+<p>Semantically, each axis entry contains both an identity and its
+current domain. For a static axis, an extent <code>N</code> denotes
+coordinates <code>0 .. N-1</code>:</p>
+<pre class="ttl"><code>f32[token := 8]</code></pre>
+<p>The type therefore does not consist of axis names alone. Two
+occurrences of <code>token</code> may have different local extents after
+an explicit operation such as a slice; they do not align until both
+identity and current domain agree.</p>
+<table>
+<thead>
+<tr>
+<th>Axis occurrence</th>
+<th>Semantic identity</th>
+<th>Current domain</th>
+<th>When determined</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>f32[token]</code>, with <code>axis token := 8</code></td>
+<td><code>token</code></td>
+<td><code>0 .. 7</code></td>
+<td>elaboration</td>
+</tr>
+<tr>
+<td><code>x[token=2:6]</code></td>
+<td><code>token</code></td>
+<td><code>0 .. 3</code>, reindexed</td>
+<td>elaboration</td>
+</tr>
+<tr>
+<td><code>f32[batch $past]</code>, with
+<code>axis $past over batch</code></td>
+<td><code>$past</code></td>
+<td><code>0 .. length_past(batch)-1</code></td>
+<td>runtime descriptor</td>
+</tr>
+</tbody>
+</table>
+<p>The slice offset <code>2</code> determines which values the selector
+copies; it is not part of the resulting axis domain. Section 7.3 defines
+this rule completely.</p>
+<p>Axis identity, not written position, determines alignment and
+ordinary type compatibility. An ordinary whitespace-separated axis list
+denotes a finite set. Consequently, these types are equal:</p>
+<pre class="ttl"><code>f32[batch token hidden]
+f32[hidden batch token]
+f32[token hidden batch]</code></pre>
+<p>Permuting axis entries in a tensor type or ordinary axis pattern does
+not change meaning. A tensor type cannot contain the same axis twice
+after generic specialization. This rule does not erase the dynamic-axis
+dependency partial order defined in Section 3.5. Axis-product factors
+and operands in a concatenating <code>@rearrange</code> retain their
+local order.</p>
+<h3 id="32-concrete-axes">3.2 Concrete axes</h3>
+<p>A module <code>axis</code> declaration introduces a concrete semantic
+identity:</p>
+<pre class="ttl"><code>axis batch, token, hidden := 4096, $past over batch;</code></pre>
+<p>All concrete axes used by a module <strong>MUST</strong> be declared
+exactly once. Their declarations are collected before type checking, so
+order is irrelevant. Every occurrence of one declared spelling denotes
+the same identity in that module.</p>
+<p>A declaration of <code>a := expr</code> defines the base extent of
+static axis <code>a</code>. A bare occurrence of <code>a</code> uses
+that base extent unless specialization or an explicit operation supplies
+a local domain. A dynamic axis such as <code>$past</code> <strong>MUST
+NOT</strong> have an extent expression. Its optional <code>over</code>
+clause names its immediate parent axes. Only a dynamic concrete axis may
+have such a clause. Declaring two names never aliases them.</p>
+<h3 id="33-generic-axes">3.3 Generic axes</h3>
+<p>A name declared in a function's static-parameter list becomes a
+generic axis when it is used in an axis position:</p>
+<pre class="ttl"><code>function identity[a](x: f32[a]) -&gt; f32[a] := x;</code></pre>
+<p>At a call, the corresponding static argument supplies a concrete axis
+identity:</p>
+<pre class="ttl"><code>identity[token](x)</code></pre>
+<p>Substitution <strong>MUST</strong> be capture-avoiding and injective
+within one call. Two distinct generic axes cannot be specialized to one
+identity. A generic is a placeholder, not a type alias.</p>
+<h3 id="34-static-axis-resolution">3.4 Static-axis resolution</h3>
+<p>An axis name written without the lexical <code>$</code> prefix is a
+<strong>static axis</strong>. It has a positive extent resolved during
+elaboration. An occurrence <code>a := expr</code> is a constraint on the
+current domain of that occurrence, not a runtime assignment. All
+constraints contributing to one domain <strong>MUST</strong> have one
+consistent positive solution.</p>
+<pre class="ttl"><code>axis batch := 2, hidden := 4096, $past over batch;
+global cache: f16[batch $past hidden];</code></pre>
+<p>Here the extents of <code>batch</code> and <code>hidden</code> are
+resolved from their declarations. At execution, the value supplied for
+<code>cache</code> carries the runtime domain of <code>$past</code>.</p>
+<p>A static expression may use integer and Boolean literals, static
+parameters, resolved static-axis extents, parentheses, <code>+</code>,
+<code>-</code>, <code>*</code>, <code>**</code>, comparisons, equality,
+<code>!</code>, <code>&amp;&amp;</code>, and <code>||</code>. Exponents
+<strong>MUST</strong> be non-negative. Division is not a static
+operation in YTL 2.0.</p>
+<h3 id="35-dynamic-axes">3.5 Dynamic axes</h3>
+<p>A <code>$</code>-prefixed axis has a runtime-varying extent. Its
+declaration may name its immediate parents with <code>over</code>:</p>
+<pre class="ttl"><code>axis batch, $sentence over batch, $token over $sentence;</code></pre>
+<p>Let <code>parents(a)</code> be the unordered set written after
+<code>over</code>. The strict transitive closure of <code>parents</code>
+is the semantic dependency partial order, and <code>support(a)</code> is
+the set of all predecessors of <code>a</code>. Parent axes
+<strong>MUST</strong> be distinct, <strong>MUST NOT</strong> include
+<code>a</code>, and <strong>MUST</strong> be declared concrete axes. The
+graph <strong>MUST</strong> be acyclic. A dynamic axis without
+<code>over</code> is a root and has one runtime extent for the whole
+tensor.</p>
+<p>The descriptor for <code>$a</code> is a logical function
+<code>length_a(s)</code> from every named coordinate assignment
+<code>s</code> over <code>support(a)</code> to a non-negative integer.
+At that coordinate assignment, valid <code>$a</code> coordinates are
+<code>0 .. length_a(s)-1</code>. A zero extent is valid.</p>
+<p>Fixing prefix coordinates partially applies a dynamic descriptor. Two
+occurrences of one dynamic axis align only when they have the same
+identity, the same residual support set, and equal current runtime
+extents at every residual support coordinate. A primitive may define an
+explicit transformation between otherwise different dynamic domains.</p>
+<h3 id="36-contextual-type-well-formedness">3.6 Contextual type
+well-formedness</h3>
+<p>Let <code>A</code> be the axis set of tensor type <code>T[A]</code>,
+let <code>P</code> be the axis set fixed by the effective enclosing
+scope prefix, and let <code>support(d)</code> be the predecessors of
+dynamic axis <code>d</code>. Fixing <code>P</code> partially applies the
+descriptor of <code>d</code>; its residual support set is
+<code>support(d) minus P</code>. The contextual well-formedness judgment
+is:</p>
+<pre class="text"><code>WF_P(T[A]) iff
+    every axis in A is distinct, and
+    for every dynamic d in A: support(d) minus P is a subset of A</code></pre>
+<p>The empty prefix is used outside a scope. A prefix is itself well
+formed only when every dynamic axis in it has its support set in that
+prefix. Every declared concrete parameter, result, and global type, and
+every inferred expression and binding type, <strong>MUST</strong>
+satisfy the judgment in its lexical context.</p>
+<p>A generic axis has no concrete support set before specialization. Its
+declaration is checked symbolically. At each call, substitution supplies
+a concrete identity, and the current domain is taken from the matching
+actual arguments or an explicit result-producing coordinate relation.
+The specialized parameter and result types <strong>MUST</strong> satisfy
+the judgment in the caller's context. A fibre call passes the already
+partially applied descriptor; the callee does not receive or inspect the
+caller's prefix coordinates.</p>
+<p>Every tensor-producing rule first derives its result axis mapping and
+then applies this judgment. Consequently, no selector, reduction,
+gather, rearrangement, call, conditional, or lifted scalar operation may
+remove a dependency while retaining the dependent dynamic axis. For
+example:</p>
+<pre class="ttl"><code>axis batch, $token over batch;
+
+function invalid(x: f32[batch $token]) -&gt; f32[$token] :=
+    x[batch=0];</code></pre>
+<p>This function is invalid because <code>$token</code> still requires
+<code>batch</code>. A scope may instead fix <code>batch</code>; within
+that scope <code>f32[$token]</code> is well formed because
+<code>batch</code> belongs to the prefix, and lifting restores
+<code>batch</code> on scope exit. For the same reason,
+<code>@einsum[batch $token -&gt; $token](x)</code> is invalid: reducing
+<code>batch</code> cannot leave its dependent <code>$token</code> in the
+result.</p>
+<h3 id="37-explicit-coordinate-transformations">3.7 Explicit coordinate
+transformations</h3>
+<pre class="ttl"><code>@rearrange[hidden := [head * channel] -&gt; head channel](x)</code></pre>
+<p>If <code>x</code> has type <code>f32[hidden]</code>, the result has
+type <code>f32[head channel]</code>. The primitive checks the product
+relation while evaluating this expression. The result type contains no
+evidence that <code>head</code> and <code>channel</code> came from
+<code>hidden</code>.</p>
+<p>YTL 2.0 has no persistent “derived axis” category.
+<code>@rearrange</code> states and checks a coordinate relation for that
+operation only. Its result has ordinary axis identities and domains; the
+type does not retain parent/child lineage. Applying another
+rearrangement requires stating and checking another complete
+relation.</p>
+<p>A selector similarly computes a new value and may replace one static
+axis domain with a smaller, reindexed domain. The result type retains
+the axis identity and its new extent, but not the source offset. Section
+7.3 gives the exact rule.</p>
+<h3 id="38-type-equality-and-compatibility">3.8 Type equality and
+compatibility</h3>
+<p>Two tensor types are equal exactly when their element types and their
+mappings from axis identities to current static extents or dynamic
+descriptors are equal. Written order is never a type-equality criterion.
+Dynamic dependency is part of the axis declaration and cannot be changed
+by moving a spelling within a type.</p>
+<p>Written order does not affect type checking, coordinate meaning,
+reference evaluation, or legal implementation schedules. A serializer
+may choose any stable presentation without making that presentation part
+of the language.</p>
+<p>An expected result type <strong>MUST NOT</strong> introduce an axis
+or determine expression inference. An optional binding annotation is
+checked only after the right-hand-side type has been derived.</p>
+<h2 id="4-modules-and-values">4. Modules and values</h2>
+<h3 id="41-program-structure-and-name-resolution">4.1 Program structure
+and name resolution</h3>
+<p>A program contains imports, axis declarations, global declarations,
+and function declarations in that order. Module declarations are visible
+throughout the module after the complete declaration set has been
+collected.</p>
+<p>An identifier in an axis position resolves first to a static
+parameter of the current function and then to a concrete module axis.
+Other identifiers resolve lexically to the nearest permitted value or
+function binding. An unresolved or multiply resolved name is a static
+error.</p>
+<p>Names of the form <code>%N</code> are <code>perc-id</code> tokens
+reserved for TTL output. An <code>at-id</code> is reserved for a
+compiler primitive or declared target function and cannot conflict with
+an application identifier.</p>
+<h3 id="42-imports-and-the-target-environment">4.2 Imports and the
+target environment</h3>
+<p>An import makes a target vocabulary visible.
+<code>import ttl.lang;</code> selects the portable vocabulary. A
+conforming environment <strong>MUST</strong> provide at least
+<code>bool</code>, <code>i32</code>, <code>f16</code>, and
+<code>f32</code>, scalar arithmetic and comparisons, <code>exp</code>,
+<code>log</code>, <code>log2</code>, <code>exp2</code>,
+<code>ceil</code>, <code>rsqrt</code>, explicit scalar conversions, and
+typed selection.</p>
+<p>The reference <code>ttl.lang</code> vocabulary also declares optional
+<code>f8e4m3fn</code> and <code>f4e2m1</code> conversion functions for
+source compatibility with quantized models. They are not part of the
+mandatory baseline. A module that references one is valid only in an
+environment that implements the corresponding dtype and target
+operation.</p>
+<p><code>+</code>, <code>minimum</code>, and <code>maximum</code> are
+reducers with declared identities. For every reducer <code>r</code>
+admitted over an approximate element type, the environment used to check
+or execute the module <strong>MUST</strong> define an order-invariant
+admissibility predicate:</p>
+<pre class="text"><code>admissible_r(M, observed)</code></pre>
+<p><code>M</code> is the finite multiset of semantic input values and
+<code>observed</code> is the runtime result. The predicate defines the
+permitted numerical approximation without referring to an enumeration or
+grouping of <code>M</code>. It <strong>MUST</strong> specify the
+treatment of every admitted special value, including NaNs, infinities,
+signed zero, and overflow. Values outside its stated domain produce a
+target numerical-domain error. For an exact element type, admissibility
+is equality with the unique reduction in the target's declared scalar
+domain. Exact overflow behavior is part of that domain and <strong>MUST
+NOT</strong> expose intermediate grouping.</p>
+<p>Distinct dtype spellings remain distinct; YTL performs no implicit
+element-type conversion.</p>
+<h3 id="43-global-values">4.3 Global values</h3>
+<p>A <code>global</code> declaration introduces one immutable tensor
+value with module-instance lifetime:</p>
+<pre class="ttl"><code>axis layer, batch, head, channel, vocabulary, hidden, $past over batch;
+
+global embedding: f16[vocabulary hidden];
+global kv_cache: f16[layer batch $past head channel];</code></pre>
+<p>Its type <strong>MUST</strong> be complete and contain only concrete
+axes. A module instance supplies exactly one well-typed value for each
+global before an export is invoked. One invocation observes one
+immutable snapshot; the environment may replace a global value between
+invocations.</p>
+<p>YTL assigns no application role such as weight, parameter, constant,
+or cache to a global. Elaboration preserves the declaration and direct
+references; it does not add the global to an export parameter list.</p>
+<h3 id="44-functions-and-static-parameters">4.4 Functions and static
+parameters</h3>
+<p>A function declaration binds its name at module scope. Its header
+binds static parameters between <code>[</code> and <code>]</code> and
+runtime value parameters between <code>(</code> and <code>)</code>. Its
+body is checked in that lexical environment and may refer directly to
+module globals.</p>
+<p>A static parameter is classified by its uses:</p>
+<ul>
+<li>use in an axis position makes it a generic axis;</li>
+<li>use in a static expression makes it a static scalar; and</li>
+<li>one parameter <strong>MUST NOT</strong> be used in both roles.</li>
+</ul>
+<p>These are the only two roles. For example, <code>a</code> is a
+generic axis, while <code>use_bias</code> is a static Boolean that
+controls elaboration:</p>
+<pre class="ttl"><code>function identity[a](x: f32[a]) -&gt; f32[a] := x;
+
+function maybe_bias[use_bias](x: f32, bias: f32) -&gt; f32 :=
+    if use_bias then x + bias else x;</code></pre>
+<p>Static scalar parameters also supply integer extent expressions and
+structural recursion counters. They disappear during elaboration just as
+generic axes do.</p>
+<p>Passing a static parameter to another function imposes the
+corresponding callee-parameter classification. All uses
+<strong>MUST</strong> imply one classification. An unused static
+parameter is invalid.</p>
+<p>Functions are first-order. An untyped helper parameter specializes to
+the complete type of its actual argument.</p>
+<p>A declaration without a body is permitted only for a
+<code>target</code> function. Ordinary and exported functions
+<strong>MUST</strong> have bodies.</p>
+<h3 id="45-function-overloading">4.5 Function overloading</h3>
+<p>Several declarations may use the same function name when their
+signatures differ. This permits operations with one conceptual role to
+retain one name across element types, ranks, or axis signatures.</p>
+<pre class="ttl"><code>function keep(x: f16) -&gt; f16 := x;
+function keep(x: f32) -&gt; f32 := x;</code></pre>
+<p><code>keep(x)</code> selects the declaration whose parameter type is
+the inferred type of <code>x</code>; the expected result type cannot
+force either choice.</p>
+<p>At a call, overload resolution considers static-argument arity and
+kind, value-argument arity, and parameter compatibility after
+generic-axis substitution and untyped-parameter specialization. Exactly
+one declaration <strong>MUST</strong> match. Result types do not
+participate, and declaration order does not break a tie. Zero or
+multiple matches are static errors.</p>
+<h3 id="46-function-markers-and-clauses">4.6 Function markers and
+clauses</h3>
+<p>An <code>export</code> function is a module entry point. Its
+parameters and results <strong>MUST</strong> have complete types
+containing concrete axes. It <strong>MUST NOT</strong> have static
+parameters.</p>
+<p>A <code>reducer</code> function is dyadic, rank-zero, and returns the
+same element type as its operands. It declares exactly one scalar
+literal <code>identity</code>. The function and identity
+<strong>MUST</strong> form a commutative monoid: combining values is
+associative and commutative, and combining any value with the identity
+returns that value. A reduction therefore denotes an invariant of its
+coordinate domain, not a traversal or fold.</p>
+<p>For exact element types these laws are exact. For approximate element
+types, such as finite-precision floating point, they apply to the
+mathematical operation; an observed result must satisfy the target
+environment's order-invariant admissibility predicate. A reducer
+declaration asserts these laws. An implementation may check the
+assertion but is not required to prove it. Use of an approximate reducer
+for which the environment supplies no admissibility predicate is a
+static error.</p>
+<p>Subtraction, division, concatenation, left folds, right folds, and
+any other order-dependent operation are not reducers. An ordered
+computation may be provided by an explicitly ordered primitive, but
+<strong>MUST NOT</strong> be presented as a reduction.</p>
+<p>The syntax and role of <code>target</code> functions are defined with
+primitives in Section 6.1.</p>
+<h3 id="47-local-values-and-binders">4.7 Local values and binders</h3>
+<p>A value parameter is visible throughout its function body. A
+<code>let</code> binding becomes visible only after its right-hand side
+and remains visible through the rest of that <code>let</code>. A local
+binding <strong>MUST NOT</strong> shadow a global, parameter, or earlier
+local binding.</p>
+<p>The same <code>binder</code> production names a single result or
+destructures multiple results:</p>
+<pre class="ttl"><code>x = expression
+(x, y) = expression</code></pre>
+<p>Every identifier in one binder <strong>MUST</strong> be distinct. If
+an annotation is present, its result arity <strong>MUST</strong> equal
+the binder arity.</p>
+<h2 id="5-core-expression-forms">5. Core expression forms</h2>
+<p>This section defines the minimum expression system. Section 6 defines
+the tensor primitives used by that system. Section 7 then defines
+convenient surface notation that elaborates to these forms.</p>
+<p>Every expression derives its result type from its syntax, operands,
+and lexical environment. Unless stated otherwise, operands evaluate from
+left to right and values are immutable.</p>
+<h3 id="51-literals-and-references">5.1 Literals and references</h3>
+<p>An integer, floating-point, or Boolean literal is rank zero. A value
+reference has the type of its binding. A function name is not a
+first-class value and may occur only as a call or primitive clause
+reference.</p>
+<h3 id="52-function-calls">5.2 Function calls</h3>
+<p>A call supplies one static argument for each static parameter and one
+value argument for each value parameter. A generic-axis argument
+<strong>MUST</strong> resolve to a concrete axis identity. A static
+scalar argument <strong>MUST</strong> evaluate during elaboration.</p>
+<p>A typed parameter matches an argument only when element type, rank,
+concrete axis identities after substitution, and current static or
+dynamic domains agree. Exactly one overload <strong>MUST</strong>
+match.</p>
+<h3 id="53-sequential-let">5.3 Sequential <code>let</code></h3>
+<p>A sequential <code>let</code> evaluates one or more bindings in
+textual order and returns its body:</p>
+<pre class="ttl"><code>let
+    y = f(x);
+    z = g(y)
+in
+    z</code></pre>
+<p>Bindings are visible only to later bindings and the body. Their names
+do not escape the expression.</p>
+<h3 id="54-conditional-expressions">5.4 Conditional expressions</h3>
+<p>For a runtime conditional, the condition has element type
+<code>bool</code>. Both alternatives <strong>MUST</strong> have the same
+type. The condition may broadcast over that type's coordinate domain but
+may not select a type, extent, or dynamic descriptor. Reference
+evaluation eagerly computes both alternatives and selects
+elementwise.</p>
+<p>A conditional controlled entirely by static values is structural and
+follows Section 9.2.</p>
+<h3 id="55-primitive-expressions">5.5 Primitive expressions</h3>
+<p>A primitive expression directly invokes a tensor primitive:</p>
+<pre class="text"><code>@name[input-axis-patterns -&gt; result-axis-pattern](arguments) clauses</code></pre>
+<p>Input axis patterns are checked against operand types at the call
+site. Result types derive from operands, the axis specification, and
+static extents resolved as defined in Section 3.4. The available
+primitives are defined in Section 6.</p>
+<h3 id="56-multiple-results">5.6 Multiple results</h3>
+<p>Multiple results are permitted only in function result signatures,
+returned expressions, and destructuring binders. They are not
+first-class tuple tensors. Each component is typed independently, and a
+binder must have the same arity as the value it destructures.</p>
+<h2 id="6-tensor-primitives">6. Tensor primitives</h2>
+<h3 id="61-target-functions-and-primitive-names">6.1 Target functions
+and primitive names</h3>
+<p>Every compiler-owned operation has an <code>@</code>-prefixed name.
+Tensor primitives such as <code>@einsum</code> are defined directly by
+this manual. A target environment may provide additional rank-zero
+scalar operations by declaring <strong>target functions</strong>:</p>
+<pre class="ttl"><code>target function @exp_f32(x: f32) -&gt; f32;
+target function @select_f32(c: bool, x: f32, y: f32) -&gt; f32;</code></pre>
+<p>Syntactically, a target function has the <code>target</code> marker,
+an <code>@</code>-name, complete rank-zero parameter and result types,
+and a terminating semicolon in place of <code>= body</code>. It
+<strong>MUST NOT</strong> have static parameters or a body. Its
+implementation is supplied by the imported target vocabulary.
+Application modules <strong>MUST NOT</strong> redeclare a target
+function.</p>
+<p>A target call has application syntax, for example
+<code>@exp_f32(x)</code>. It lifts the declared scalar operation
+pointwise over the union of its operand axes. Shared named axes align
+and absent axes broadcast. Its result dtype comes from the target
+declaration, and its result axes are that union. A target declaration is
+not a tensor primitive axis specification and cannot contain an axis
+pattern. This direct application is retained in TTL; it is not merely
+surface syntax.</p>
+<h3 id="62-einsum">6.2 <code>@einsum</code></h3>
+<p>An einsum has one input axis pattern per operand and one result axis
+pattern:</p>
+<pre class="ttl"><code>@einsum[row shared, shared column -&gt; row column](a, b)</code></pre>
+<p>Each input axis pattern <strong>MUST</strong> name exactly the axes
+of its operand; position does not establish alignment. Let the iteration
+axes be the set union of the axes named by the input axis patterns. An
+axis occurring in an input and the result is free. An axis occurring in
+an input but not the result is reduced. Every result axis
+<strong>MUST</strong> occur in an input. Reordering axes within any axis
+pattern does not change the expression.</p>
+<p>The optional <code>map</code> clause names a scalar function
+receiving one element from each operand in operand order. With one
+operand and no clause, mapping is identity. With two or more operands
+and no clause, mapping is left-associated <code>*</code>.</p>
+<p>When reduced axes exist, <code>reduce</code> selects a reducer and
+defaults to <code>+</code>. A reduce clause is forbidden when no axis is
+reduced. The reduced axes form a set <code>K</code>. For each result
+coordinate <code>q</code>, mapping over every valid coordinate
+assignment to <code>K</code> produces a finite multiset
+<code>M_q</code>. The result at <code>q</code> is the unique
+commutative-monoid reduction of <code>M_q</code>; the empty multiset
+produces the reducer identity. A multiset has no enumeration or
+parenthesization, so neither is part of reduction semantics. An
+approximate observed result <strong>MUST</strong> satisfy the
+admissibility predicate of Section 4.2.</p>
+<h3 id="63-gather">6.3 <code>@gather</code></h3>
+<pre class="ttl"><code>@gather[source -&gt; inserted](data, indices)</code></pre>
+<p>The primitive replaces the named source axis of <code>data</code>
+with the named axes of <code>indices</code>. Indices have element type
+<code>i32</code>. Shared index and data axes align by identity. A
+negative or out-of-domain index is a dynamic error.</p>
+<h3 id="64-scatter">6.4 <code>@scatter</code></h3>
+<p>Scatter is a functional, reducer-controlled indirect update:</p>
+<pre class="ttl"><code>@scatter[token -&gt; vocabulary](base, updates, indices) reduce=+</code></pre>
+<p>It has exactly three operands: <code>base</code>,
+<code>updates</code>, and <code>indices</code>. Its axis specification
+has one contribution pattern before <code>-&gt;</code> and exactly one
+destination axis after it. Every item is a bare axis. A
+<code>reduce</code> clause is required and a <code>map</code> clause is
+forbidden. <code>base</code> and <code>updates</code> have one dtype,
+<code>indices</code> has dtype <code>i32</code>, and the reducer
+combines two elements of the value dtype into one element of that
+dtype.</p>
+<p>Let <code>B</code>, <code>U</code>, and <code>J</code> be the axis
+sets of <code>base</code>, <code>updates</code>, and
+<code>indices</code>; let <code>I</code> be the contribution-axis set
+named before <code>-&gt;</code>; let <code>s</code> be the destination
+axis; and let <code>R = U minus I</code>. The following rules apply:</p>
+<ol type="1">
+<li><code>s</code> occurs in <code>B</code> and occurs in neither
+<code>U</code> nor <code>J</code>.</li>
+<li><code>I</code> is a subset of both <code>U</code> and
+<code>J</code>.</li>
+<li><code>J</code> is a subset of <code>U</code>, and
+<code>J minus R = I</code>.</li>
+<li><code>B minus {s}</code> is a subset of <code>R</code>.</li>
+<li>Aligned axis occurrences have compatible domains, and the inferred
+result type is well formed under Section 3.6.</li>
+</ol>
+<p>The result has the value dtype and axis set <code>R union {s}</code>.
+The domain of <code>s</code> comes from <code>base</code>; every other
+result domain comes from <code>updates</code>. <code>base</code>
+broadcasts over axes in <code>R</code> that it omits, while
+<code>indices</code> broadcasts over axes in <code>R</code> that it
+omits. Consequently, <code>base</code> supplies the complete static or
+dynamic destination domain without an expected result type supplying
+shape information.</p>
+<p>For result coordinate <code>q</code>, let <code>C_q</code> be the
+multiset of update elements whose coordinates agree with <code>q</code>
+on <code>R</code> and whose corresponding index equals
+<code>q(s)</code>. The result element is the invariant reduction of the
+multiset</p>
+<pre class="text"><code>{ base(project(q, B)) } multiset-union C_q</code></pre>
+<p>under the named reducer. Thus collisions have no writer order, and a
+coordinate receiving no updates retains its <code>base</code> value.
+With the additive reducer, a zero-valued base produces conventional
+scatter-add and supplies the reverse-mode value operation corresponding
+to <code>@gather</code>; indices are ordinary discrete inputs and are
+not differentiated by that correspondence. A negative index or an index
+outside the destination domain at its retained coordinate is a dynamic
+error.</p>
+<p>Inside an axis scope, omitted prefix axes of <code>base</code>
+broadcast normally. For example, an <code>f32[vocabulary]</code> base
+may be used with <code>f32[batch token]</code> updates inside
+<code>let [batch]</code>; the result is
+<code>f32[batch vocabulary]</code>.</p>
+<h3 id="65-rearrange">6.5 <code>@rearrange</code></h3>
+<p><code>@rearrange</code> performs a value-independent coordinate
+transformation. Every valid axis specification <strong>MUST</strong>
+belong to exactly one of the two classes below: a single-source
+coordinate map or a multi-source concatenation. A axis specification
+belonging to neither class is invalid. Its decomposition into the
+class's constituent relations <strong>MUST</strong> be unique; an
+ambiguous decomposition is invalid. Both classes must produce a
+contextually well-formed result under Section 3.6.</p>
+<h4 id="651-single-source-coordinate-map">6.5.1 Single-source coordinate
+map</h4>
+<p>A single-source rearrangement has exactly one operand. Its axis
+specification is a composition of disjoint local relations. Every input
+and result axis occurrence, and every factor named by an axis-product
+annotation, <strong>MUST</strong> belong to exactly one relation:</p>
+<ul>
+<li>A <strong>preserved axis</strong> has the same identity and domain
+on both sides.</li>
+<li>A <strong>relabel relation</strong> replaces one source axis with
+one distinct result axis having the same domain. It is written by the
+two unmatched bare axes, as in
+<code>@rearrange[token -&gt; source](x)</code>. This is an explicit
+value transformation, not an alias declaration. Static relabels require
+equal extents. Dynamic relabels require equal support sets and transfer
+the source descriptor under the result identity. If unmatched axes admit
+more than one such pairing, the rearrangement is ambiguous and
+invalid.</li>
+<li>A <strong>product relation</strong> replaces one static parent axis
+<code>p</code> with an ordered sequence of distinct static factor axes
+<code>f1, ..., fn</code>, or performs the inverse replacement. It is
+written by annotating the parent pattern item, for example
+<code>p := [f1 * ... * fn]</code>. The factors occur as ordinary axes on
+the opposite side; factor names inside the annotation are relation
+metadata, not axes of the parent's side.</li>
+<li>A <strong>unit removal</strong> omits one input axis whose extent is
+one.</li>
+<li>A <strong>unit insertion</strong> introduces a fresh result axis
+item <code>a := 1</code>.</li>
+<li>A <strong>replication</strong> introduces a fresh result axis item
+<code>a := N</code>, where <code>N</code> resolves during elaboration to
+an integer greater than one.</li>
+</ul>
+<p>The axes participating in different local relations
+<strong>MUST</strong> be disjoint. Several independent relations may
+therefore be expressed in one <code>@rearrange</code>. A source axis may
+be absent from the result only through a relabel, product relation, or
+unit removal. A result axis may be absent from the source only through a
+relabel, product relation, unit insertion, or replication. A fresh
+dynamic axis is forbidden because no source supplies its descriptor.</p>
+<p>For a product relation with factor extents <code>n1 ... nn</code>,
+the checked extent equation and coordinate map are:</p>
+<pre class="text"><code>extent(p) = n_1 * ... * n_n
+p = sum(i=1..n, f_i * product(j=i+1..n, n_j))</code></pre>
+<p>The last factor therefore varies fastest. Splitting computes
+<code>p</code> from the result factor coordinates; merging uses the
+unique inverse Euclidean decomposition of <code>p</code>. A product has
+at least two factors; a one-axis relation would be forbidden aliasing
+rather than factorization.</p>
+<p>Replication ignores the fresh coordinate when reading the source. For
+example:</p>
+<pre class="ttl"><code>@rearrange[item -&gt; copy := 2 item](x)</code></pre>
+<p>denotes <code>result[copy, item] = x[item]</code>. Unit insertion and
+removal use the unique zero coordinate of their axes. If all local
+relations are preserved axes, the rearrangement is the identity;
+changing only their written order has no effect, and elaboration
+<strong>SHOULD</strong> remove the expression.</p>
+<h4 id="652-multi-source-concatenation">6.5.2 Multi-source
+concatenation</h4>
+<p>A multi-source concatenation has at least two operands and contains
+no product, unit, or replication relation. There must be one common axis
+set <code>C</code>, one distinct concatenated axis <code>s_i</code> for
+each operand <code>i</code>, and one fresh result axis <code>r</code>,
+such that:</p>
+<pre class="text"><code>axes(input_i) = C union {s_i}
+axes(result)  = C union {r}</code></pre>
+<p>The <code>s_i</code> and <code>r</code> identities
+<strong>MUST</strong> be pairwise distinct. Every axis in <code>C</code>
+has the same domain in every operand and the result. The
+<code>s_i</code> and <code>r</code> <strong>MUST</strong> either all be
+static or all be dynamic. In the dynamic case they <strong>MUST</strong>
+have the same support set. Their extents satisfy:</p>
+<pre class="text"><code>extent(r, c) = sum(i, extent(s_i, c))</code></pre>
+<p>for each coordinate assignment <code>c</code> to the shared support
+set. At result coordinate <code>r=k</code>, let <code>i</code> be the
+unique operand whose half-open prefix-sum interval contains
+<code>k</code>; the result reads that operand at
+<code>s_i = k - sum(j&lt;i, extent(s_j, c))</code>. Operand order
+therefore orders coordinates within the single result axis. It does not
+order independent tensor axes.</p>
+<p>For example:</p>
+<pre class="ttl"><code>axis batch, channel,
+     $past over batch, $step over batch, $source over batch;
+
+@rearrange[
+    batch $past channel,
+    batch $step channel
+    -&gt; batch $source channel
+](past, step)</code></pre>
+<p>Every relation established by <code>@rearrange</code> is local to
+that expression. After the result is typed, no split, merge, unit,
+replication, or concatenation provenance is retained.
+<code>@rearrange</code> <strong>MUST NOT</strong> gather, scatter,
+reduce, apply a scalar operation, or otherwise discard coordinates.</p>
+<h2 id="7-surface-shorthand">7. Surface shorthand</h2>
+<p>The forms in this section add no primitive tensor operation.
+Elaboration reduces them to the core expressions and primitives of
+Sections 5 and 6.</p>
+<h3 id="71-unary-and-binary-scalar-operations">7.1 Unary and binary
+scalar operations</h3>
+<p>A scalar operation applied to tensors is lifted over the set union of
+their axes. Shared axes align by identity. An operand missing an axis is
+invariant along that axis and broadcasts without a physical singleton
+dimension.</p>
+<p>For scalar mapper <code>m</code>:</p>
+<pre class="text"><code>axes(m(x0, ..., xn)) = union(axes(x0), ..., axes(xn))</code></pre>
+<p>Incompatible domains are a static error. There is no implicit
+element-type conversion.</p>
+<h3 id="72-map-reduce-expressions">7.2 Map-reduce expressions</h3>
+<p>This form exists only in YTL 2.0:</p>
+<pre class="ttl"><code>left reducer.mapper[reduction-axes] right</code></pre>
+<p>For example:</p>
+<pre class="ttl"><code>A +.*[shared] B</code></pre>
+<p>The left name <strong>MUST</strong> resolve to a reducer and the
+right name to a dyadic mapper. Let <code>I</code> be the set union of
+operand axes and <code>K</code> the set of distinct bracketed axes.
+Every member of <code>K</code> <strong>MUST</strong> occur in
+<code>I</code>. The result axes are the set difference
+<code>I minus K</code>.</p>
+<p>An operand omitting a reduction axis broadcasts along it before
+mapping. Bracket order has no semantic effect: <code>r.m[a b]</code> and
+<code>r.m[b a]</code> are the same operation. The expression elaborates
+to one <code>@einsum</code> and does not materialize the mapped tensor
+first.</p>
+<h3 id="73-selectors">7.3 Selectors</h3>
+<p>A selector indexes or slices a static axis by identity, regardless of
+where that axis is written in the operand type:</p>
+<pre class="ttl"><code>axis batch := 2, token := 8, hidden := 4;
+
+function inspect(x: f32[batch token hidden]) :=
+    let
+        one = x[token=3];       // f32[batch hidden]
+        four = x[token=2:6]     // f32[batch token := 4 hidden]
+    in
+        (one, four);</code></pre>
+<p>For <code>x[a=i]</code>, <code>a</code> <strong>MUST</strong> occur
+exactly once in the inferred type of <code>x</code> and <code>i</code>
+<strong>MUST</strong> be a static integer in its domain. The result type
+is the type of <code>x</code> with axis identity <code>a</code> removed;
+every other named axis and its domain are unchanged.</p>
+<p>For <code>x[a=begin:end]</code>, <code>a</code> has the same
+requirement and both bounds <strong>MUST</strong> be static. The result
+retains identity <code>a</code> with current extent
+<code>end - begin</code> and is reindexed from zero: result coordinate
+<code>a=j</code> contains the source value at <code>a=begin+j</code>.
+The source offset is part of the selector operation, not the result
+type. Thus selection neither infers by position nor invents a new axis
+identity. Multiple selections apply these rules to distinct named axes.
+Bounds <strong>MUST</strong> be statically valid. Selecting a dynamic
+axis is invalid in YTL 2.0.</p>
+<p>Consequently, <code>x[token=2:6]</code> and <code>x[token=4:8]</code>
+both have the axis entry <code>token := 4</code>. They align by their
+new coordinates <code>0 .. 3</code>; their different source offsets have
+already been consumed by the two selector operations.</p>
+<h2 id="8-scoped-computation">8. Scoped computation</h2>
+<p>Scoped computation is the second YTL 2.0 addition. It factors a
+common named coordinate environment, conventionally called a prefix, out
+of a group of ordinary tensor expressions. This section adds no new
+tensor value or primitive; Section 9.4 defines its flattening.</p>
+<h3 id="81-scope-syntax-and-prefix">8.1 Scope syntax and prefix</h3>
+<pre class="ttl"><code>axis batch, head, token, feature;
+
+function add_bias(
+    x: f32[batch head token feature],
+    bias: f32[head feature]
+) -&gt; f32[batch head token feature] :=
+let [batch head token]
+    y = x + bias
+in
+    y;</code></pre>
+<p>The <code>let [batch head token]</code> header establishes one
+coordinate for each named axis while its body is evaluated. These named
+coordinates form this scope's local prefix. A prefix is a finite mapping
+from axis identities to coordinates, not a coordinate tuple. In a nested
+scope, the effective prefix is the disjoint union of the enclosing and
+local prefixes. Reordering a scope header does not change the scope.</p>
+<p>Header axes <strong>MUST</strong> be distinct and <strong>MUST
+NOT</strong> repeat an enclosing prefix axis. The extent of an axis
+written without an extent constraint <strong>MUST</strong> be resolvable
+during elaboration under Section 3.4. A fresh static axis must carry a
+positive extent constraint, as in <code>copy := 2</code>. A scope cannot
+introduce a fresh dynamic axis. The support set of every dynamic header
+axis <strong>MUST</strong> be a subset of the effective prefix.</p>
+<p>Bindings follow the sequential rules of Section 5.3. A scoped
+<code>let</code> may have no bindings because its body alone may require
+lifting.</p>
+<h3 id="82-fibre-selection">8.2 Fibre selection</h3>
+<p>The code in Section 8.1 is the YTL source. The following table is its
+semantic derivation, not additional source syntax. At the prefix
+coordinate where <code>batch=b</code>, <code>head=h</code>, and
+<code>token=t</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Reference</th>
+<th>Coordinates fixed by the scope</th>
+<th>Type visible inside the scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>x</code></td>
+<td><code>batch=b, head=h, token=t</code></td>
+<td><code>f32[feature]</code></td>
+</tr>
+<tr>
+<td><code>bias</code></td>
+<td><code>head=h</code></td>
+<td><code>f32[feature]</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>bias</code> therefore varies with <code>head</code> but is
+invariant with respect to <code>batch</code> and <code>token</code>. The
+local addition combines two <code>f32[feature]</code> fibres. No
+<code>fibre(...)</code> function or runtime selector is added to
+YTL.</p>
+<p>Let <code>P</code> be the effective prefix and let an outer tensor
+have axes <code>A</code>. At one coordinate of <code>P</code>, a
+reference fixes the coordinates in <code>P intersect A</code> and
+exposes the remaining axes <code>A minus P</code>.</p>
+<p>For example, under prefix <code>[batch head token]</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Outer axes</th>
+<th>Fibre axes</th>
+<th>Prefix axes along which the value is invariant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[feature]</code></td>
+<td><code>[feature]</code></td>
+<td><code>batch head token</code></td>
+</tr>
+<tr>
+<td><code>[batch feature]</code></td>
+<td><code>[feature]</code></td>
+<td><code>head token</code></td>
+</tr>
+<tr>
+<td><code>[head feature]</code></td>
+<td><code>[feature]</code></td>
+<td><code>batch token</code></td>
+</tr>
+<tr>
+<td><code>[batch token feature]</code></td>
+<td><code>[feature]</code></td>
+<td><code>head</code></td>
+</tr>
+<tr>
+<td><code>[batch head token feature]</code></td>
+<td><code>[feature]</code></td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>Selection denotes a view of the value at the current prefix
+coordinate. It does not require copying or allocation.</p>
+<h3 id="83-result-lifting">8.3 Result lifting</h3>
+<p>If the body has fibre type <code>T[F]</code>, the scoped expression
+has type <code>T[P union F]</code> relative to its enclosing scope:</p>
+<pre class="text"><code>Lift_P(T[F]) = T[P union F]</code></pre>
+<p>Nested lifting composes by disjoint set union. <code>F</code>
+<strong>MUST NOT</strong> contain an axis already in <code>P</code>. The
+complete prefix remains in the result even when the body is invariant
+along part of it. For a dynamic fibre whose descriptor was partially
+applied by <code>P</code>, lifting reassembles those fibre descriptors
+over the corresponding coordinates of <code>P</code>.</p>
+<h3 id="84-calls-within-a-scope">8.4 Calls within a scope</h3>
+<p>Tensor arguments are viewed as their current fibres before function
+matching. The returned fibre is lifted by the caller's scope. The callee
+does not receive the caller's prefix and cannot observe neighbouring
+prefix coordinates.</p>
+<p>More precisely, for effective prefix <code>P</code>, an argument
+whose outer axes are <code>A</code> participates in overload resolution
+with visible axes <code>A minus P</code>. A typed parameter
+<strong>MUST</strong> have exactly those visible axes after generic-axis
+substitution. A candidate parameter that names an axis in <code>P</code>
+is not viable, even if the underlying flat argument carries that axis.
+Result types are checked by the same rule before the caller restores
+<code>P</code>.</p>
+<p>Consequently, an operation that consumes a prefix axis must occur in
+an ancestor scope where that axis is still present in the fibre
+type.</p>
+<h3 id="85-scope-restrictions-and-local-lifetime">8.5 Scope restrictions
+and local lifetime</h3>
+<p>Within prefix <code>P</code>:</p>
+<ul>
+<li>no expression may reduce an axis in <code>P</code>;</li>
+<li>no local result may introduce another occurrence of an axis in
+<code>P</code>;</li>
+<li>no call may observe neighbouring coordinates along <code>P</code>;
+and</li>
+<li>cross-prefix communication requires an explicit operation outside
+the scope.</li>
+</ul>
+<p>Lifting defines a value, not required storage. A fibre-local
+intermediate may remain a scalar, register fragment, or other local
+representation when the observable result is unchanged.</p>
+<h2 id="9-finite-elaboration">9. Finite elaboration</h2>
+<p>Elaboration of every accepted YTL program <strong>MUST</strong>
+terminate and produce a finite TTL module before tensor execution
+begins. Runtime tensor values and dynamic-axis extents <strong>MUST
+NOT</strong> determine which functions, bindings, or primitive nodes are
+emitted. The resulting graph may be large, but it is finite and
+completely explicit.</p>
+<p>This is a structural finiteness guarantee, not a numerical
+determinism guarantee. It does not prescribe tensor traversal, reduction
+grouping, or one bit pattern for approximate floating-point results.</p>
+<h3 id="91-static-parameters">9.1 Static parameters</h3>
+<p>A static parameter used in a static expression denotes a non-negative
+<code>i32</code> unless its uses require <code>bool</code>. Static
+arguments and extent expressions are evaluated before tensor execution.
+They are not runtime tensors.</p>
+<h3 id="92-structural-conditionals-and-recursion">9.2 Structural
+conditionals and recursion</h3>
+<p>A static conditional elaborates only its selected branch. Recursion
+is permitted only through structurally decreasing static
+specializations. Every recursive edge <strong>MUST</strong> preserve or
+decrease corresponding static arguments, and at least one argument
+<strong>MUST</strong> decrease by a positive integer. Tensor values
+cannot control structural recursion. Because each function body has
+finitely many calls, these requirements make every reachable
+specialization graph finite.</p>
+<h3 id="93-specialization-and-shorthand-expansion">9.3 Specialization
+and shorthand expansion</h3>
+<p>For every reachable call, elaboration binds static arguments,
+resolves one overload, verifies axis substitution and extent
+constraints, and specializes untyped parameters. Ordinary functions and
+scalar helpers are inlined.</p>
+<p>Unary and binary tensor operations become direct pointwise target
+applications. Map-reduce expressions become <code>@einsum</code>.
+Selectors become explicit coordinate projections with resolved result
+extents. No shorthand remains in TTL.</p>
+<h3 id="94-scope-flattening">9.4 Scope flattening</h3>
+<p>At effective prefix <code>P</code>, a local binding with fibre axes
+<code>F</code> receives flat axes <code>P union F</code>. References to
+outer tensors explicitly select coordinates
+<code>P intersect axes(tensor)</code>. Missing prefix axes become
+explicit broadcasts.</p>
+<p>The body is lifted over all of <code>P</code>. A missing static
+prefix axis whose extent has been resolved is introduced by
+<code>@rearrange</code>. A dynamic prefix axis must be preserved through
+an operand carrying its descriptor. No author scope remains in TTL.</p>
+<h3 id="95-required-output">9.5 Required output</h3>
+<p>For every export, elaboration <strong>MUST</strong>, in dependency
+order:</p>
+<ol type="1">
+<li>resolve imports and module declarations;</li>
+<li>classify and bind static parameters;</li>
+<li>verify axis identities and their static or dynamic domains;</li>
+<li>evaluate structural conditionals and unfold structural
+recursion;</li>
+<li>resolve overloads and inline reachable functions;</li>
+<li>expand surface shorthand;</li>
+<li>flatten scoped computation;</li>
+<li>resolve primitive coordinate relations;</li>
+<li>make maps, reducers, broadcasts, and scalar conversions
+explicit;</li>
+<li>split compound scalar expressions into target-atomic tensor
+bindings; and</li>
+<li>emit resolved concrete axis declarations, including the dynamic-axis
+dependency partial order, globals, and finite primitive-only export
+graphs.</li>
+</ol>
+<p>No helper, overload set, static parameter, generic axis, recursion,
+ordinary call, shorthand expression, scope, or untyped binding remains
+in TTL. Elaboration <strong>MUST</strong> preserve the reference result
+and exported signatures.</p>
+<p>Two elaborated TTL modules are structurally equivalent when they have
+the same concrete axis identities, dynamic-axis dependency partial
+order, domains, globals, export signatures, and isomorphic primitive
+dependency graphs, modulo generated binding names and the textual
+enumeration order of unordered axis sets. Operand order, multiple-result
+order, concatenation operand order, and axis-product factor order remain
+part of that graph.</p>
+<h2 id="10-reference-evaluation">10. Reference evaluation</h2>
+<h3 id="101-module-environment-and-evaluation">10.1 Module environment
+and evaluation</h3>
+<p>Evaluation begins with one well-typed value for every global. Each
+export invocation observes one immutable snapshot. Function arguments
+and expression operands evaluate from left to right. Values are
+immutable. Tensor coordinates may be visited in any order because
+coordinate traversal is not observable.</p>
+<p>A reduction denotes the finite-multiset operation of Section 6.2. For
+exact element types it has one mathematical value. For approximate
+element types, a conforming observed result <strong>MUST</strong>
+satisfy the environment's admissibility predicate. A reference
+implementation may choose a fixed traversal for repeatability, but that
+choice is not YTL semantics and a program <strong>MUST NOT</strong>
+depend on it. Unless a target's admissibility predicate itself requires
+one, YTL does not require bitwise-identical approximate results across
+conforming implementations.</p>
+<p>A scoped expression is defined by its flattened result. An
+interpreter may evaluate fibres directly when the observable result is
+identical.</p>
+<h3 id="102-required-diagnostics">10.2 Required diagnostics</h3>
+<p>A conforming implementation <strong>MUST</strong> reject:</p>
+<ul>
+<li>lexical or grammatical invalidity;</li>
+<li>duplicate, unresolved, or illegally shadowed bindings;</li>
+<li>an undeclared concrete axis or inconsistently classified static
+parameter;</li>
+<li>an unresolved or ambiguous call;</li>
+<li>an axis mapping or scope prefix that fails contextual
+well-formedness;</li>
+<li>incompatible types, axis identities, or static or dynamic
+domains;</li>
+<li>use of an approximate reducer without an admissibility
+predicate;</li>
+<li>an unresolved static scope or rearrange-introduced axis;</li>
+<li>reduction across a scope prefix;</li>
+<li>invalid structural recursion;</li>
+<li>primitive arity, pattern, mapper, reducer, result, or
+rearrange-classification errors; and</li>
+<li>invalid selector constraints.</li>
+</ul>
+<p>Out-of-domain gather or scatter indices and scalar numerical-domain
+failures are dynamic errors. Silent positional axis matching, semantic
+renaming, truncation, padding, wrapping, or clamping is forbidden unless
+a target operation explicitly defines it.</p>
+<h2 id="11-conformance-and-compatibility">11. Conformance and
+compatibility</h2>
+<h3 id="111-ytl-conformance">11.1 YTL conformance</h3>
+<p>A YTL 2.0 implementation may provide parsing, static checking,
+elaboration, reference evaluation, or any stated combination. It
+<strong>MUST</strong> identify the parts it implements. Each implemented
+part <strong>MUST</strong> obey this manual.</p>
+<h3 id="112-ytl-10-profile">11.2 YTL 1.0 profile</h3>
+<p>The <a href="ytl-lrm-1.0.html">YTL 1.0 compatibility profile</a> uses
+the common grammar and all common semantics in this manual. It excludes
+only <code>scope-expr</code> and <code>map-reduce-op</code>, as shown in
+Section 2.3. Every YTL 1.0 program is therefore a YTL 2.0 program with
+the same static meaning, result, and structurally equivalent TTL
+output.</p>
+<h3 id="113-ttl-relationship">11.3 TTL relationship</h3>
+<p>The <a href="ttl-lrm-1.0.html">TTL 1.0 specification</a> is
+permanently a strict syntactic subset of YTL. It contains resolved
+concrete axis declarations, including the dynamic-axis dependency
+partial order, complete globals and export signatures, <code>%N</code>
+bindings, compiler primitives, and fixed scalar target references.
+Runtime values carry dynamic descriptors.</p>
+<p>Every TTL grammar nonterminal occurs in the common YTL grammar. TTL
+obtains each construct only by restricting its corresponding right-hand
+side. Consequently, a grammar simplification applicable to a shared
+construct belongs in the common YTL grammar as well as in TTL.</p>
+<p>TTL contains no imports, helpers, overloads, static parameters,
+generic axes, structural conditionals, recursion, ordinary calls,
+shorthand, author scopes, or untyped bindings. YTL 1.0 and YTL 2.0
+elaborate to the same TTL 1.0 language.</p>
+<h2 id="appendix-a-complete-examples">Appendix A. Complete examples</h2>
+<h3 id="a1-scoped-softmax">A.1 Scoped softmax</h3>
+<pre class="ttl"><code>axis batch, token, class;
+
+function softmax[a](x: f32[a]) -&gt; f32[a] :=
+    let
+        m = @einsum[a -&gt;](x) reduce=maximum;
+        e = exp(x - m);
+        z = @einsum[a -&gt;](e) reduce=+
+    in
+        e / z;
+
+export function normalize(
+    logits: f32[batch token class]
+) -&gt; f32[batch token class] :=
+    let [batch token] in
+        softmax[class](logits);</code></pre>
+<p>Inside the scope, <code>logits</code> has fibre
+<code>f32[class]</code>. Scope exit restores the prefix
+<code>[batch token]</code>.</p>
+<h3 id="a2-scoped-attention">A.2 Scoped attention</h3>
+<pre class="ttl"><code>axis batch, head, query, key, channel, value;
+
+function softmax[a](x: f32[a]) -&gt; f32[a] :=
+    let
+        m = @einsum[a -&gt;](x) reduce=maximum;
+        e = exp(x - m);
+        z = @einsum[a -&gt;](e) reduce=+
+    in
+        e / z;
+
+export function attention(
+    q: f32[batch head query channel],
+    k: f32[batch head key channel],
+    v: f32[batch head key value]
+) -&gt; f32[batch head query value] :=
+    let [batch head query]
+        score = q +.*[channel] k;
+        weight = softmax[key](score)
+    in
+        weight +.*[key] v;</code></pre>
+<p>Inside the scope, <code>q</code>, <code>k</code>, and <code>v</code>
+have fibre axes <code>[channel]</code>, <code>[key channel]</code>, and
+<code>[key value]</code>. The two map-reduce expressions consume
+<code>channel</code> and <code>key</code>; lifting restores
+<code>[batch head query]</code>.</p>
+<h3 id="a3-whole-array-duplication">A.3 Whole-array duplication</h3>
+<pre class="ttl"><code>axis item, copy := 2, doubled;
+
+export function duplicate(
+    x: f32[item]
+) -&gt; f32[doubled := 2 * item] :=
+    let
+        tiled = let [copy] in x
+    in
+        @rearrange[copy item -&gt; doubled := [copy * item]](tiled);</code></pre>
+<p>The scope lifts <code>x</code> to <code>[copy item]</code>. The
+rearrange merges that product into <code>doubled</code>, producing two
+consecutive complete copies.</p>
+<h2 id="appendix-b-related-work-and-naming">Appendix B. Related work and
+naming</h2>
+<p>This section is non-normative. It records intellectual influences and
+naming rationale; it does not add syntax or semantics.</p>
+<h3 id="b1-yang-gauge-symmetry-and-the-language-names">B.1 Yang, gauge
+symmetry, and the language names</h3>
+<p><strong>YTL</strong> expands to <strong>Yang Tensor Language</strong>
+and is named in honour of the physicist Chen-Ning (Zhenning) Yang. In
+their groundbreaking 1954 paper, <a
+href="https://doi.org/10.1103/PhysRev.96.191">“Conservation of Isotopic
+Spin and Isotopic Gauge Invariance”</a>, Yang and Robert Mills
+formulated local isotopic gauge invariance and the associated nonlinear
+field equations. The work became the foundation of Yang-Mills gauge
+theory.</p>
+<p>The name honours Yang's work on Gauge Symmetry and suits a language
+concerned with exposing mathematical structure and invariant coordinate
+meaning. It does not imply that YTL implements gauge theory or derives
+technical semantics from it.</p>
+<p><strong>TTL</strong> expands to <strong>Tiny Tensor
+Language</strong>. It is a small, primitive-only subset of YTL that
+retains the complete tensor semantics of the language. TTL is the
+elaboration target of YTL and is intended as the input to interpreters
+and lowering compilers.</p>
+<h3 id="b2-apl-and-nesl">B.2 APL and NESL</h3>
+<p>Kenneth E. Iverson's <a
+href="https://www.jsoftware.com/papers/APL1.htm"><em>A Programming
+Language</em></a> and the APL tradition are long-term influences on
+YTL's array-first design sensibility. APL demonstrated the value of
+treating whole arrays as the normal objects of computation and of
+building substantial algorithms from a compact, compositional operator
+vocabulary. YTL's APL-style infix map-reduce notation reflects that
+influence. YTL does not adopt APL's broad symbolic vocabulary or
+implicit rank reasoning; it keeps a small operator surface and makes
+semantic axis names explicit so that expressions remain locally
+explainable.</p>
+<p><a href="https://www.cs.cmu.edu/~scandal/nesl.html">NESL</a> is a
+second long-term influence, specifically through its treatment of
+irregular arrays. NESL's implementation flattened nested sequences into
+value vectors accompanied by <a
+href="https://www.cs.cmu.edu/~scandal/papers/nesl-ppopp93.html">segment
+descriptors</a> that record the length of each logical subsequence. This
+model motivates YTL's decision to retain dynamic axes: a dynamic-axis
+descriptor records one runtime extent for every coordinate assignment
+over its support set while the values remain part of a tensor.</p>
+<p>The two languages obtain nested parallel structure differently. NESL
+permits nested sequence operations and recursive parallel calls, as used
+in divide-and-conquer algorithms. YTL represents nesting through named
+axes and axis scopes. Its recursion is structural, terminates during
+elaboration, and does not provide runtime nested parallelism. YTL
+therefore adopts the segmented-array insight without adopting NESL's
+recursive nested-sequence execution model.</p>
+<h3 id="b3-einstein-notation-einsum-and-einops">B.3 Einstein notation,
+<code>einsum</code>, and Einops</h3>
+<p>YTL's tensor-expression design follows the tradition of the Einstein
+summation convention. In library practice, <a
+href="https://numpy.org/doc/stable/reference/generated/numpy.einsum.html">NumPy's
+<code>einsum</code></a> established a compact interface in which
+labelled input patterns and an explicit <code>-&gt;</code> result
+pattern express contraction, reduction, diagonal selection,
+broadcasting, and permutation.</p>
+<p><a href="https://einops.rocks/">Einops</a> subsequently improved this
+notation with readable, full-word axis names and applied related
+input-to-output patterns to rearrangement, reshaping, repetition, and
+reduction. YTL's <code>@einsum</code> syntax is directly inspired by the
+Einops improvement of <code>einsum</code>, and its
+<code>@rearrange</code> syntax follows the same pattern-oriented
+approach. YTL promotes those library patterns into language syntax,
+resolves their names as declared or generic semantic axis identities,
+permits independently selected scalar mappers and reducers, and
+elaborates the expressions to a target-independent primitive core. The
+design lineage and motivation are described by the <a
+href="https://openreview.net/forum?id=oapKSVM2bcj">Einops paper</a>.</p>
+<h3 id="b4-einlang">B.4 Einlang</h3>
+<p><a href="https://github.com/einlang/einlang">Einlang</a> and its book
+<a href="https://einlang.github.io/einlang/book/">The Name in the
+Bracket</a> make the case that coordinate names must be recorded and
+checked rather than left as positional knowledge or comments. Einlang's
+emphasis on semantic coordinates strongly influenced YTL's decision to
+make axis identity part of tensor types. Both languages aim to reject
+semantically swapped axes even when their extents agree.</p>
+<p>The designs nevertheless make different choices. YTL declares
+concrete axis identities at module scope and uses static parameters as
+generic axis placeholders. It does not use output-index bindings to
+supply expression types; the right-hand side and lexical scope determine
+the result. Its minimum tensor algebra remains explicit
+<code>@einsum</code>, <code>@gather</code>, <code>@scatter</code>, and
+<code>@rearrange</code>, while scoped fibres and infix map-reduce are
+optional authoring forms. YTL scopes are flattened, ordinary functions
+are inlined, and the result is the separate primitive-only TTL
+language.</p>
+<p>YTL deliberately discards several mechanisms that would weaken this
+model:</p>
+<ul>
+<li>positional axis addressing or matching;</li>
+<li>expression-local labels as the source of concrete axis
+identity;</li>
+<li>output-index bindings as a source of expression types;</li>
+<li>implicit axis aliasing or semantic renaming;</li>
+<li>persistent source-axis lineage after an explicit
+<code>@rearrange</code> operation;</li>
+<li>runtime recursion or recurrence.</li>
+</ul>
+<p>YTL's decisive design boundary is finite elaboration. Structural
+recursion must terminate during elaboration; it never appears in TTL or
+at runtime. Runtime values may supply tensor elements and dynamic-axis
+extents, but they cannot decide the structure of the emitted
+computation. Every accepted source program therefore closes into a
+finite, explicit primitive graph before tensor execution begins.</p>
+<p>This is a finiteness contract, not an evaluation-determinism
+contract. YTL does not use elaboration to prescribe coordinate
+traversal, reduction grouping, or a unique floating-point bit pattern.
+These choices retain Einlang's central insight about semantic axes while
+deliberately placing YTL on the finite side of the boundary between
+compile-time composition and runtime computation.</p>
+<h3 id="b5-personal-note-from-the-author">B.5 Personal note from the
+author</h3>
+<p>Computer science has left us an extraordinary treasury of
+intellectual gems; few, if any, of the ideas in YTL are wholly new. The
+choice and composition of those gems are subjective, but the
+contribution sought here is mostly subtractive: to reduce proven ideas
+until they form one canonical, coherent, and minimal language. The
+practical hope is that engineers working at the frontier of GPUs, FPGAs,
+and future accelerators can spend less time pre-committing to
+implementation decisions, more time expressing the computation they
+actually intend, and find greater satisfaction in the craft of
+expression and the pursuit of invariants.</p>
+</body>
+</html>

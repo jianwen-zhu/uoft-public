@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Active research projects with Jianwen Zhu: persistent AI foundations, agentic electronic design automation, and new ideas in combinatorial optimization.">
+<title>Active Research · Jianwen Zhu</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body id="top">
+<a class="skip" href="#main">Skip to content</a>
+<div class="stationary-header">
+<nav aria-label="Research themes">
+
+<div><a href="#foundations">Persistent AI Foundations</a><a href="#eda">Agentic EDA</a><a href="#emerging">Representational Combinatorics</a></div>
+</nav>
+<header class="hero">
+<h1>Jianwen Zhu <span>· Active Research</span></h1>
+<p class="affiliation">Electrical &amp; Computer Engineering · University of Toronto</p>
+<p class="recruiting">I am looking for talented graduate students to pursue the following active projects.</p>
+<p class="student-scope">Students pursue focused projects within these broader research themes.</p>
+</header>
+</div>
+<main id="main">
+<section id="foundations" aria-labelledby="foundations-title">
+<h2 id="foundations-title">Persistent AI Foundations</h2>
+<p>Long-horizon agents turn LLM inference from transient request processing into persistent computation. This research studies the systems foundations for that transition along three dimensions: Persistent Inference State, Persistent Agent State, and Persistent Meaning.</p>
+<p>The aim is reusable compiler, runtime, and semantic infrastructure for long-running, domain-specific agents.</p>
+<h3>Persistent Inference State</h3>
+<p>Long-horizon agent workloads create long-lived inference state whose capacity requirements can exceed GPU high-bandwidth memory. We investigate compiler and runtime abstractions that make memory hierarchy, data locality, state lifetime, and movement explicit, including out-of-core execution that coordinates data movement with kernel execution.</p>
+<p><a href="references/ytl-lrm-2.0.html">YTL</a> (Yang Tensor Language) provides a concrete starting point: a functional tensor language with named axes and a defined elaboration into a tensor intermediate representation. Building on this semantic foundation, the research examines progressive lowering into parallel, locality-aware execution plans and their coordination with the GPU runtime.</p>
+<h3>Persistent Agent State</h3>
+<p>Long-running agents must preserve evolving execution state across interruption and recovery. Large populations of related agents also need to collaborate and explore alternative trajectories without repeatedly reconstructing or duplicating their shared history.</p>
+<p>The target is a file system for persistent agent state, supporting lightweight continuous snapshots, efficient recovery, and branching at decision points. We investigate how file-system abstractions and runtime integration can preserve execution continuity while sharing common history across many evolving agent instances, without duplicating that history for each branch.</p>
+<h3>Persistent Meaning</h3>
+<p>Long-running agents must preserve the meaning of their evolving knowledge, assumptions, requirements, decisions, and commitments in forms that humans and agents can inspect and manipulate.</p>
+<p>We investigate human-readable representations that combine natural-language descriptions with explicit structure for deterministic parsing, checking, and transformation. The research examines how these representations connect domain knowledge and decisions to formal reasoning and executable computation, and where generative interpretation must be distinguished from deterministic verification.</p>
+</section><section id="eda" aria-labelledby="eda-title">
+<h2 id="eda-title">Agentic EDA</h2>
+<p>Infrastructure-scale electronic systems require engineering decisions across components, interfaces, physical domains, and abstraction levels. Much of system design remains fragmented across specifications, engineering knowledge, specialized analyses, and human judgment.</p>
+<p>A central research question is how to construct agents that carry complex engineering processes from requirements to validated closure. We investigate semantic representation, decision-centric execution, durable computation, and tool-grounded validation as foundations for autonomous system EDA. Progress is measured by the complexity of designs reaching validated closure, the human intervention required, and the quality and cost of the resulting designs.</p>
+<h3>Agentic EDA for High-Speed PCB Design</h3>
+<p>High-speed PCB design connects component requirements, power delivery, signal integrity, interface architecture, physical implementation, and manufacturing. Critical knowledge is distributed across heterogeneous engineering sources. We study how agents can assemble this evidence into a coherent design state, make decisions under interacting constraints, and diagnose and revise designs when validation fails.</p>
+<p>The objective is to carry a high-speed system from requirements to electrical and physical closure with progressively less human engineering intervention. Fabrication and bring-up provide a direct experimental test of whether the design decisions and validation process are sound.</p>
+<h3>Agentic EDA for Multi-Physics 2.5D/3D Integration</h3>
+<p>Heterogeneous integration couples architectural, electrical, thermal, mechanical, reliability, process, and manufacturing constraints. We investigate how agents select modeling abstractions and analysis fidelity, track how decisions propagate across domains, and resolve interacting constraints until the integrated system reaches multi-physics closure.</p>
+<p>2.5D/3D integration tests whether a shared semantic design state and specialized physical models can support autonomous cross-domain reasoning and redesign. The challenge is to reach simultaneous closure while preserving model validity, traceability, and trustworthy physical validation.</p>
+</section>
+<section id="emerging" aria-labelledby="emerging-title">
+<h2 id="emerging-title">Representational Combinatorics</h2>
+<p>How can a better representation make a combinatorial problem easier to solve? We investigate symbolic and learned representations that expose shared structure and enable efficient computation.</p>
+<p>Our work on <a href="https://www.eecg.utoronto.ca/~jzhu/publications/symbolic_conf.pdf">symbolic pointer analysis</a> and <a href="https://www.eecg.toronto.edu/~jzhu/publications/pldi04_conf.pdf">symbolic transfer functions</a> demonstrates this approach using binary decision diagrams. Another direction is <a href="https://arxiv.org/abs/1611.09940">neural combinatorial optimization</a>, motivated by the success of learned representations in deep learning. We study latent spaces for search and the recovery of feasible discrete solutions.</p>
+<p>We target classic hard combinatorial problems in general and long-standing EDA problems in particular, evaluating solution quality, correctness, and computational cost.</p>
+</section>
+<footer><p><a href="../past-research/">Selected Work</a></p></footer>
+</main>
+<script>
+const header = document.querySelector('.stationary-header');
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
+}).observe(header);
+</script>
+</body>
+</html>

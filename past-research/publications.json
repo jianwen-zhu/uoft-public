@@ -1,0 +1,233 @@
+{
+  "citation_source": "Google Scholar",
+  "checked_on": "2026-11-18",
+  "selection": "Curated works, grouped by theme; not an exhaustive ranking. Related book chapters and manuals are represented by the SpecC book rather than listed separately.",
+  "themes": [
+    {
+      "id": "eda",
+      "title": "EDA",
+      "description": "Design automation must make a growing space of hardware choices tractable. These works connect executable specifications to implementation, and reformulate synthesis and placement so that better designs remain practical to compute."
+    },
+    {
+      "id": "analysis",
+      "title": "Representational Combinatorics",
+      "description": "The cost of a combinatorial problem depends on how its possibilities are represented. By encoding sets and relations in decision diagrams, these works exploit shared structure to analyze programs and explore circuit choices without enumerating every case."
+    },
+    {
+      "id": "performance",
+      "title": "Performance Analysis",
+      "description": "A useful performance model explains how workload behavior becomes a hardware cost. These works preserve the statistics that matter\u2014signal correlation and uneven write activity\u2014to expose tradeoffs in numerical precision and storage endurance."
+    },
+    {
+      "id": "computing",
+      "title": "Custom Computing",
+      "description": "Specialization pays when the organization of hardware matches the structure of the work. These projects examine where data moves, where state lives, and when computation advances\u2014and how to preserve a custom design as its implementation technology changes."
+    }
+  ],
+  "publications": [
+    {
+      "theme": "eda",
+      "title": "Register Pressure Aware Scheduling for High Level Synthesis",
+      "authors": "R. Beidas, W. S. Mong, J. Zhu",
+      "venue": "ASP-DAC",
+      "year": 2011,
+      "citations": 7,
+      "url": "https://doi.org/10.1109/ASPDAC.2011.5722234",
+      "scholar_id": "11014955788268353968"
+    },
+    {
+      "theme": "analysis",
+      "title": "BddCut: Towards Scalable Symbolic Cut Enumeration",
+      "authors": "A. C. Ling, J. Zhu, S. D. Brown",
+      "venue": "ASP-DAC",
+      "year": 2007,
+      "citations": 8,
+      "url": "https://www.eecg.toronto.edu/~brown/papers/aspdac07-ling.pdf",
+      "scholar_id": "17809966162877568785"
+    },
+    {
+      "theme": "computing",
+      "title": "Rotary Register File: A Micro-Architectural Primitive on FPGA",
+      "authors": "R. Nakhjavani, J. Zhu",
+      "venue": "FCCM",
+      "year": 2020,
+      "citations": 1,
+      "url": "https://www.fccm.org/past/2020/proceedings/2020/pdfs/FCCM2020-65FOvhMqzyMYm99lfeVKyl/580300a228/580300a228.pdf",
+      "scholar_id": "17446113304760413588"
+    },
+    {
+      "theme": "computing",
+      "title": "VariPipe: Low-overhead Variable-clock Synchronous Pipelines",
+      "authors": "N. Toosizadeh, S. G. Zaky, J. Zhu",
+      "venue": "ICCD",
+      "year": 2009,
+      "citations": 9,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/navid-veripipe-iccd09.pdf",
+      "scholar_id": "8143881292227795055"
+    },
+    {
+      "theme": "computing",
+      "title": "Calligrapher: a new layout-migration engine for hard intellectual property libraries",
+      "authors": "J. Zhu, F. Fang, Q. Tang",
+      "venue": "IEEE TCAD",
+      "year": 2005,
+      "citations": 34,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/calligrapher_jour.pdf",
+      "scholar_id": "6390204753888710124"
+    },
+    {
+      "theme": "eda",
+      "title": "FBDD: A Folded Logic Synthesis System",
+      "authors": "D. Wu, J. Zhu",
+      "venue": "ASICON",
+      "year": 2005,
+      "citations": 23,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/fbdd_conf.pdf",
+      "scholar_id": "4657747767116300426",
+      "artifacts": [
+        {
+          "label": "Source code \u00b7 FBDD 1.1 (tar.gz)",
+          "url": "https://www.eecg.toronto.edu/~jzhu/releases/fbdd/fbdd-1.1.tar.gz"
+        },
+        {
+          "label": "User manual",
+          "url": "https://www.eecg.toronto.edu/~jzhu/fbdduser11_web/index.html"
+        },
+        {
+          "label": "Project & releases",
+          "url": "https://www.eecg.toronto.edu/~jzhu/fbdd_web/index.html"
+        }
+      ]
+    },
+    {
+      "theme": "eda",
+      "title": "SpecC: Specification Language and Methodology",
+      "authors": "D. D. Gajski, J. Zhu, R. D\u00f6mer, A. Gerstlauer, S. Zhao",
+      "venue": "Springer",
+      "year": 2000,
+      "citations": 913,
+      "url": "https://link.springer.com/book/10.1007/978-1-4615-4515-6",
+      "scholar_id": "7347113783153034184"
+    },
+    {
+      "theme": "eda",
+      "title": "A retargetable, ultra-fast instruction set simulator",
+      "authors": "J. Zhu, D. D. Gajski",
+      "venue": "DATE",
+      "year": 1999,
+      "citations": 121,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/sim.pdf",
+      "scholar_id": "11834267141924297164"
+    },
+    {
+      "theme": "analysis",
+      "title": "Symbolic pointer analysis revisited",
+      "authors": "J. Zhu, S. Calman",
+      "venue": "PLDI",
+      "year": 2004,
+      "citations": 133,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/pldi04_conf.pdf",
+      "scholar_id": "3038074044464982255"
+    },
+    {
+      "theme": "analysis",
+      "title": "Symbolic pointer analysis",
+      "authors": "J. Zhu",
+      "venue": "ICCAD",
+      "year": 2002,
+      "citations": 52,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/symbolic_conf.pdf",
+      "scholar_id": "11839314557138386412"
+    },
+    {
+      "theme": "analysis",
+      "title": "Towards scalable flow and context sensitive pointer analysis",
+      "authors": "J. Zhu",
+      "venue": "DAC",
+      "year": 2005,
+      "citations": 51,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/qpa_conf.pdf",
+      "scholar_id": "16510936669755901279"
+    },
+    {
+      "theme": "analysis",
+      "title": "Scalable synthesis and clustering techniques using decision diagrams",
+      "authors": "A. C. Ling, J. Zhu, S. D. Brown",
+      "venue": "IEEE TCAD",
+      "year": 2008,
+      "citations": 11,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/TCADBddMap.pdf",
+      "scholar_id": "15438957944472748250"
+    },
+    {
+      "theme": "performance",
+      "title": "Write skew and Zipf distribution: Evidence and implications",
+      "authors": "Y. Yang, J. Zhu",
+      "venue": "ACM Transactions on Storage",
+      "year": 2016,
+      "citations": 91,
+      "url": "https://dl.acm.org/doi/10.1145/2908557",
+      "scholar_id": "8181398469109264230"
+    },
+    {
+      "theme": "performance",
+      "title": "Analytical modeling of garbage collection algorithms in hotness-aware flash-based solid state drives",
+      "authors": "Y. Yang, J. Zhu",
+      "venue": "MSST",
+      "year": 2014,
+      "citations": 22,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/yang-msst14.pdf",
+      "scholar_id": "9765305464634945785"
+    },
+    {
+      "theme": "eda",
+      "title": "Parallelizing simulated annealing-based placement using GPGPU",
+      "authors": "A. Choong, R. Beidas, J. Zhu",
+      "venue": "FPL",
+      "year": 2010,
+      "citations": 57,
+      "url": "https://twiki.di.uniroma1.it/pub/CI/WebHome/ParSA-GPGPU.pdf",
+      "scholar_id": "9801731140054644252"
+    },
+    {
+      "theme": "eda",
+      "title": "Towards scalable placement for FPGAs",
+      "authors": "H. Bian, A. C. Ling, A. Choong, J. Zhu",
+      "venue": "FPGA",
+      "year": 2010,
+      "citations": 56,
+      "url": "https://janders.eecg.utoronto.ca/1387/readings/hannah.pdf",
+      "scholar_id": "14116613955549681864"
+    },
+    {
+      "theme": "computing",
+      "title": "A 1 cycle-per-byte XML parsing accelerator",
+      "authors": "Z. Dai, N. Ni, J. Zhu",
+      "venue": "FPGA",
+      "year": 2010,
+      "citations": 47,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/dai-fpga_2010.pdf",
+      "scholar_id": "12838141603805746940"
+    },
+    {
+      "theme": "computing",
+      "title": "Saturating the transceiver bandwidth: Switch fabric design on FPGAs",
+      "authors": "Z. Dai, J. Zhu",
+      "venue": "FPGA",
+      "year": 2012,
+      "citations": 37,
+      "url": "https://www.eecg.toronto.edu/~jzhu/publications/dai-fpga_2012.pdf",
+      "scholar_id": "13930008558713752503"
+    },
+    {
+      "theme": "performance",
+      "title": "Dynamic-range estimation",
+      "authors": "B. Wu, J. Zhu, F. N. Najm",
+      "venue": "IEEE TCAD",
+      "year": 2006,
+      "citations": 34,
+      "url": "https://www.eecg.utoronto.ca/~najm/papers/tcad06-bin.pdf",
+      "scholar_id": "9530526835281575497"
+    }
+  ]
+}

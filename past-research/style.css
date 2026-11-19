@@ -1,0 +1,16 @@
+@import url("../research-page/style.css");
+
+footer{margin-top:42px;padding-top:24px;border-top:1px solid var(--line);font-size:14px;line-height:1.5;color:#4a625e}
+
+.publication{display:grid;grid-template-columns:minmax(0,1fr) 38px;gap:20px;border-bottom:1px solid var(--line);padding:22px 0}
+.publication h3{font-size:17px;line-height:1.5;font-weight:600;margin:0 0 7px}
+.publication h3 a{text-decoration:none}
+.publication h3 a:hover{text-decoration:underline}
+.publication .authors,.publication .venue{font-size:14px;line-height:1.6;margin:0;color:#4a625e}
+.publication .venue{margin-top:2px}
+.citations{text-align:right;align-self:start;margin-top:4px;text-decoration:none;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums;color:#4a625e}
+.citations:hover{text-decoration:underline}
+.pdf-link{font-size:12px;text-decoration:none}
+.pdf-link:hover{text-decoration:underline}
+.publication .artifacts{font-size:14px;line-height:1.7;margin:10px 0 0}
+@media(max-width:620px){.publication{grid-template-columns:minmax(0,1fr) 28px;gap:16px}.publication h3{font-size:16px}}

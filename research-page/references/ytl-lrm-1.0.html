@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>YTL Language Reference Manual 1.0</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="manual.css" />
+</head>
+<body>
+<h1 id="ytl-language-reference-manual-10">YTL Language Reference Manual
+1.0</h1>
+<p>Version 1.0 compatibility profile</p>
+<h2 id="status">Status</h2>
+<p>This document is the normative definition of the YTL 1.0
+compatibility profile. It does not reinterpret artifacts governed by the
+earlier <a href="ytl-lrm.html">YTL 0.1 manual</a>.</p>
+<p>YTL 1.0 is intentionally defined from the common YTL 2.0 grammar and
+semantics so that it is a strict source-syntax subset of YTL 2.0 rather
+than a language that YTL 2.0 must later reinterpret. The common rules
+are specified by the <a href="ytl-lrm-2.0.html">YTL 2.0
+specification</a>. This profile states the exact 1.0 restrictions and
+version relationship.</p>
+<p>The version relation is monotonic. A later language version
+<strong>MUST</strong> preserve every program admitted by the preceding
+stable version, with the same static meaning and reference result, while
+adding at least one new program. The same rule applies independently to
+TTL.</p>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>,
+<strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL
+NOT</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+<strong>MAY</strong>, and <strong>OPTIONAL</strong> are to be
+interpreted as described by RFC 2119 and RFC 8174 when, and only when,
+they appear in bold.</p>
+<h2 id="1-language-contents">1. Language contents</h2>
+<p>YTL 1.0 includes the following foundations from the YTL 2.0
+specification. The language names and related work are discussed in
+Appendix B of that manual.</p>
+<ul>
+<li>module declarations for nominal concrete axis identities;</li>
+<li>static parameters that become generic axes when used in axis
+positions;</li>
+<li>order-free semantic tensor types with name-based alignment and
+broadcasting;</li>
+<li>RHS-derived expression types;</li>
+<li>static axes and a dynamic-axis dependency partial order;</li>
+<li>immutable module-scope globals with module-instance lifetime;</li>
+<li>ordinary and structurally recursive first-order functions;</li>
+<li>scalar lifting and explicit <code>@einsum</code> map and invariant
+reduction;</li>
+<li>gather, functional scatter-reduce, and selectors;</li>
+<li>value-independent <code>@rearrange</code>, including explicit static
+replication;</li>
+<li>the <code>ttl.lang</code> scalar vocabulary; and</li>
+<li>elaboration to fully typed, primitive-only TTL 1.0.</li>
+</ul>
+<p>Optional vocabulary entries may add nominal dtypes and scalar
+operations without changing YTL syntax. In particular, the reference
+<code>ttl.lang</code> module retains optional low-precision conversions
+for quantized-model compatibility.</p>
+<p>YTL 1.0 does not include:</p>
+<ul>
+<li>scoped <code>let</code> prefixes;</li>
+<li>fibre-selection or prefix-lifting surface syntax; or</li>
+<li>the APL-style infix <code>reducer.mapper[axes]</code>
+expression.</li>
+</ul>
+<p>The absence of infix map-reduce does not remove tensor mapping or
+reduction. YTL 1.0 expresses them through explicit <code>@einsum</code>
+patterns and <code>map=</code> and <code>reduce=</code> clauses.</p>
+<h2 id="2-exact-syntax-restriction">2. Exact syntax restriction</h2>
+<p>YTL 1.0 is the common grammar in Section 2.2 of the YTL 2.0 manual.
+It omits the two additions isolated in Section 2.3:
+<code>scope-expr</code> and <code>map-reduce-op</code>. Its expression
+productions are therefore:</p>
+<pre class="ebnf"><code>expr       ::= let-expr | if-expr | infix-expr ;
+infix-expr ::= prefix (binary-op prefix)* ;</code></pre>
+<p>All other lexical and grammar productions are exactly the common
+productions in Section 2.2 of the YTL 2.0 specification.</p>
+<p>These expressions witness strict inclusion:</p>
+<pre class="ttl"><code>// YTL 2.0 only: scoped lifting
+let [copy := 2] in x
+
+// YTL 2.0 only: APL-style infix map-reduce
+A +.*[shared] B</code></pre>
+<p>Neither expression is valid YTL 1.0. There are no additional YTL 1.0
+forms absent from YTL 2.0.</p>
+<h2 id="3-semantic-compatibility">3. Semantic compatibility</h2>
+<p>Every construct shared by YTL 1.0 and YTL 2.0 has exactly the
+same:</p>
+<ul>
+<li>name resolution;</li>
+<li>nominal axis identity;</li>
+<li>generic-axis substitution;</li>
+<li>tensor type and extent inference;</li>
+<li>dynamic descriptor behavior;</li>
+<li>overload selection;</li>
+<li>primitive typing;</li>
+<li>invariant-reduction semantics;</li>
+<li>reference evaluation; and</li>
+<li>error conditions.</li>
+</ul>
+<p>In both profiles, a module <code>axis</code> declaration introduces a
+concrete identity, and a static parameter in a function header becomes a
+generic axis when used in an axis position. Calls specialize those
+generics explicitly. YTL 2.0 therefore does not reinterpret a YTL 1.0
+function signature or call.</p>
+<p>For every valid YTL 1.0 program <code>p</code>:</p>
+<pre class="text"><code>parse_2.0(p) succeeds
+type_1.0(p) = type_2.0(p)
+evaluate_1.0(p) = evaluate_2.0(p)
+elaborate_1.0(p) ~= elaborate_2.0(p)</code></pre>
+<p>Elaboration equivalence above is structural equivalence as defined by
+the YTL 2.0 LRM. It ignores generated binding names and the written
+order of unordered axis sets; it preserves every semantically ordered
+operand or result edge.</p>
+<h2 id="4-common-ttl">4. Common TTL</h2>
+<p>YTL 1.0 and YTL 2.0 elaborate to the language defined by the <a
+href="ttl-lrm-1.0.html">TTL 1.0 specification</a>. Its complete grammar
+is obtained only by restricting the common YTL grammar: axes and extents
+are concrete, functions are exports, types are complete, and expressions
+are flat primitive dataflow. TTL adds no syntax to either YTL
+profile.</p>
+<p>YTL 2.0 scope flattening and infix map-reduce introduce no new TTL
+form:</p>
+<pre class="text"><code>YTL 1.0 source ────────────────┐
+                               ├──&gt; TTL 1.0
+YTL 2.0 source ── flatten ─────┘</code></pre>
+<p>TTL 0.1 artifacts remain governed by the released TTL 0.1 manual. The
+TTL 1.0 manual makes no unsupported monotonic-compatibility claim while
+axis ordering, dynamic dependencies, and reduction invariance differ
+between the two versions.</p>
+<h2 id="5-required-compatibility-evidence">5. Required compatibility
+evidence</h2>
+<p>Conforming implementations <strong>MUST</strong> provide the
+following compatibility evidence:</p>
+<ol type="1">
+<li>every positive YTL 1.0 syntax fixture <strong>MUST</strong> parse in
+YTL 2.0 mode;</li>
+<li>every YTL 2.0-only scope and infix fixture <strong>MUST</strong> be
+rejected in YTL 1.0 mode for the stated profile restriction rather than
+a downstream error;</li>
+<li>shared source fixtures <strong>MUST</strong> receive identical types
+and diagnostics;</li>
+<li>elaboration of every YTL 1.0 fixture <strong>MUST</strong> produce
+structurally equivalent TTL graphs in both modes; and</li>
+<li>both modes <strong>MUST</strong> emit TTL accepted by one TTL 1.0
+verifier;</li>
+<li>elaboration <strong>MUST</strong> preserve module globals as direct
+TTL declarations and references without changing export parameter
+lists;</li>
+<li>emitted dynamic-axis dependencies <strong>MUST</strong> satisfy
+contextual well-formedness and survive elaboration; and</li>
+<li>every approximate reducer emitted to TTL <strong>MUST</strong> have
+an order-invariant admissibility predicate in the paired target
+environment.</li>
+</ol>
+<p>Until this evidence exists, this file is a compatibility design
+contract, not a conformance claim.</p>
+</body>
+</html>

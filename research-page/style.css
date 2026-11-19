@@ -1,0 +1,26 @@
+:root{--paper:#f7f6f0;--ink:#18302e;--accent:#006957;--line:#cad5cc}*{box-sizing:border-box}html{scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent);text-underline-offset:4px}a:focus-visible{outline:2px solid var(--accent);outline-offset:5px}.skip{position:absolute;top:-100px;left:1rem;background:white;padding:1rem}.skip:focus{top:1rem}nav,main{max-width:900px;margin:auto;padding-left:28px;padding-right:28px}nav{padding-top:30px;padding-bottom:22px}nav div{display:flex;gap:12px 28px;flex-wrap:wrap}nav a{font-size:15px;text-decoration:none}nav a:hover{text-decoration:underline}main{padding-bottom:64px}.hero{padding:8px 0 6px}.recruiting{font-size:19px;line-height:1.6;margin:18px 0 32px}h2{font:500 32px/1.25 Georgia,serif;letter-spacing:-.02em;margin:42px 0 20px;padding-top:24px;border-top:1px solid var(--line)}h3{font-size:18px;line-height:1.4;font-weight:650;margin:28px 0 10px}p{margin:14px 0}@media(max-width:620px){body{font-size:16px}nav,main{padding-left:22px;padding-right:22px}nav{padding-top:22px}nav div{gap:10px 20px}.recruiting{font-size:18px}h2{font-size:29px}}
+
+/* Compact identity and persistent theme navigation. */
+html{scroll-padding-top:88px}
+nav{position:sticky;top:0;z-index:10;background:var(--paper);padding-top:16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.skip{z-index:20}
+.hero{padding-top:24px}
+h1{font:500 30px/1.25 Georgia,serif;letter-spacing:-.02em;margin:0 0 4px}
+h1 span{font-size:22px;color:var(--accent)}
+.affiliation{font-size:14px;line-height:1.5;color:#4a625e;margin:0}
+.recruiting{margin:18px 0 12px}
+section:first-of-type h2{margin-top:24px}
+@media(max-width:620px){html{scroll-padding-top:120px}nav{padding-top:12px;padding-bottom:12px}nav div{gap:8px 20px}.hero{padding-top:22px}h1{font-size:28px}h1 span{font-size:21px}}
+
+/* Keep the complete opening stationary; measure its height for anchor links. */
+html{scroll-padding-top:calc(var(--header-height, 240px) + 16px)}
+.stationary-header{position:sticky;top:0;z-index:10;background:var(--paper);border-bottom:1px solid var(--line)}
+.stationary-header nav{position:static;border-bottom:0;padding-top:12px;padding-bottom:10px}
+.stationary-header .hero{max-width:900px;margin:auto;padding:8px 28px 12px}
+.stationary-header .recruiting{font-size:17px;line-height:1.5;margin:12px 0 0}
+@media(max-width:620px){.stationary-header .hero{padding:6px 22px 12px}.stationary-header h1{font-size:25px}.stationary-header h1 span{font-size:20px}.stationary-header .recruiting{font-size:16px}}
+
+/* The stationary header already separates the first research section. */
+section:first-of-type h2{border-top:0}
+
+.student-scope{font-size:14px;line-height:1.5;color:#4a625e;margin:6px 0 0}

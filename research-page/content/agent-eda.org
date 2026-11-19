@@ -1,0 +1,17 @@
+Agentic EDA for Infrastructure-Scale System Design
+
+Infrastructure-scale electronic systems require engineering decisions across components, interfaces, physical domains, and abstraction levels. Much of system design remains fragmented across specifications, engineering knowledge, specialized analyses, and human judgment.
+
+A central research question is how to construct agents that carry complex engineering processes from requirements to validated closure. We investigate semantic representation, decision-centric execution, durable computation, and tool-grounded validation as foundations for autonomous system EDA. Progress is measured by the complexity of designs reaching validated closure, the human intervention required, and the quality and cost of the resulting designs.
+
+Theme 1: Agentic EDA for High-Speed PCB Design
+
+High-speed PCB design connects component requirements, power delivery, signal integrity, interface architecture, physical implementation, and manufacturing. Critical knowledge is distributed across heterogeneous engineering sources. We study how agents can assemble this evidence into a coherent design state, make decisions under interacting constraints, and diagnose and revise designs when validation fails.
+
+The objective is to carry a high-speed system from requirements to electrical and physical closure with progressively less human engineering intervention. Fabrication and bring-up provide a direct experimental test of whether the design decisions and validation process are sound.
+
+Theme 2: Agentic EDA for Multi-Physics 2.5D/3D Integration
+
+Heterogeneous integration couples architectural, electrical, thermal, mechanical, reliability, process, and manufacturing constraints. We investigate how agents select modeling abstractions and analysis fidelity, track how decisions propagate across domains, and resolve interacting constraints until the integrated system reaches multi-physics closure.
+
+2.5D/3D integration tests whether a shared semantic design state and specialized physical models can support autonomous cross-domain reasoning and redesign. The challenge is to reach simultaneous closure while preserving model validity, traceability, and trustworthy physical validation.

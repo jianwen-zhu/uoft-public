@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>TTL Language Reference Manual</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="manual.css" />
+</head>
+<body>
+<h1 id="ttl-language-reference-manual">TTL Language Reference
+Manual</h1>
+<p>Version 0.1</p>
+<h2 id="status-and-normative-language">Status and normative
+language</h2>
+<p>This document defines TTL as the normative post-elaboration form of
+YTL: a finite, typed tensor dataflow language. It specifies the complete
+textual syntax, static constraints, and execution semantics of this
+version.</p>
+<p>TTL uses a strict syntactic subset of YTL as defined by the <a
+href="ytl-lrm.html">YTL Language Reference Manual</a>. Its semantics are
+the official image of YTL elaboration. Source imports and declarations
+have already been resolved; they are not copied into TTL text.</p>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>,
+<strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL
+NOT</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+<strong>MAY</strong>, and <strong>OPTIONAL</strong> are to be
+interpreted as described by RFC 2119 and RFC 8174 when, and only when,
+they appear in bold.</p>
+<p>Anything not admitted by the grammar and constraints in this document
+is not TTL 0.1. In particular, TTL has no implicit operations and no
+implementation-defined source behavior.</p>
+<h2 id="1-scope">1. Scope</h2>
+<p>A TTL module describes one or more exported, immutable tensor
+dataflow graphs. It contains:</p>
+<ul>
+<li>fully typed tensor parameters and results;</li>
+<li>a finite, topologically ordered sequence of tensor bindings;</li>
+<li>direct references to scalar targets used by tensor maps and
+reductions; and</li>
+<li>the tensor operations <code>@einsum</code>, <code>@gather</code>,
+<code>@rearrange</code>, and static subviews.</li>
+</ul>
+<p>TTL defines logical tensor values. It does not define storage
+layouts, buffer allocation, address arithmetic, kernel boundaries,
+scheduling, device placement, host APIs, checkpoint formats, or program
+packaging.</p>
+<p>TTL 0.1 has no non-export function declarations, ordinary function
+calls, overload resolution, structural parameters, recursion, loops,
+conditional expressions, nested <code>let</code>, mutable state, tuple
+values, tensor literals, implicit broadcasting, or implicit primitive
+selection.</p>
+<h2 id="2-lexical-structure">2. Lexical structure</h2>
+<h3 id="21-source-text">2.1 Source text</h3>
+<p>Source text is Unicode, but every token defined by this version is
+ASCII. Whitespace separates tokens and is otherwise insignificant.</p>
+<p>Two comment forms are recognized:</p>
+<pre class="text"><code>// comment through the end of the line
+/* non-nesting block comment */</code></pre>
+<p>An unterminated block comment is invalid.</p>
+<h3 id="22-tokens">2.2 Tokens</h3>
+<p>The following regular expressions use conventional notation:</p>
+<pre class="ebnf"><code>id       ::= /[A-Za-z_][A-Za-z0-9_]*/ ;
+integer  ::= /0|[1-9][0-9]*/ ;
+float    ::= /([0-9]+\.[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?/
+           | /[0-9]+[eE][+-]?[0-9]+/ ;
+axis     ::= id ;
+dyn-axis ::= &quot;$&quot; id ;
+target   ::= &quot;@&quot; id ;
+core-id  ::= &quot;%&quot; integer ;</code></pre>
+<p>Leading zeroes are not permitted on a multi-digit integer. A negative
+number is the token <code>-</code> followed by an unsigned numeric
+literal; it is not one token.</p>
+<p>The reserved words used by TTL are:</p>
+<pre class="text"><code>function  export  let  in  map  reduce  true  false</code></pre>
+<h2 id="3-complete-grammar">3. Complete grammar</h2>
+<p>The grammar below is the complete TTL 0.1 grammar. <code>X?</code>,
+<code>X*</code>, and <code>X+</code> mean optional, zero-or-more, and
+one-or-more respectively; <code>X | Y</code> denotes alternatives.
+Literal punctuation is quoted.</p>
+<pre class="ebnf"><code>module    ::= export+ EOF ;
+export    ::= &quot;export&quot; &quot;function&quot; id &quot;(&quot; params? &quot;)&quot;
+              &quot;-&gt;&quot; results &quot;=&quot; body &quot;;&quot; ;
+params    ::= param (&quot;,&quot; param)* ;
+param     ::= id &quot;:&quot; type ;
+results   ::= type | &quot;(&quot; type (&quot;,&quot; type)+ &quot;)&quot; ;
+
+body      ::= refs | &quot;let&quot; binding (&quot;;&quot; binding)* &quot;in&quot; refs ;
+binding   ::= value-name &quot;=&quot; rhs ;
+rhs       ::= signed-literal | value-name selector | primitive ;
+refs      ::= value-name
+            | &quot;(&quot; value-name (&quot;,&quot; value-name)+ &quot;)&quot; | &quot;(&quot; refs &quot;)&quot; ;
+
+primitive ::= target &quot;[&quot; specification &quot;]&quot; &quot;(&quot; operands &quot;)&quot; clause* ;
+specification ::= pattern (&quot;,&quot; pattern)* &quot;-&gt;&quot; pattern ;
+pattern   ::= term* ;
+term      ::= axis-name | axis-name &quot;=&quot; &quot;(&quot; factor+ &quot;)&quot; ;
+factor    ::= axis-name (&quot;=&quot; positive-integer)? ;
+operands  ::= value-name (&quot;,&quot; value-name)* ;
+clause    ::= (&quot;map&quot; | &quot;reduce&quot;) &quot;=&quot; target ;
+
+selector  ::= &quot;[&quot; selection (&quot;,&quot; selection)* &quot;]&quot; ;
+selection ::= axis &quot;=&quot; integer (&quot;:&quot; integer)? ;
+type      ::= dtype (&quot;[&quot; dimension* &quot;]&quot;)? ;
+dimension ::= axis &quot;=&quot; positive-integer | dyn-axis ;
+dtype     ::= id ;
+axis-name ::= axis | dyn-axis ;
+value-name ::= id | core-id ;
+
+signed-literal   ::= literal | &quot;-&quot; numeric-literal ;
+literal          ::= integer | float | &quot;true&quot; | &quot;false&quot; ;
+numeric-literal  ::= integer | float ;
+positive-integer ::= integer ;</code></pre>
+<p><code>positive-integer</code> is additionally constrained to the
+inclusive range <code>1..2147483647</code>. Empty patterns are
+meaningful for rank-zero tensors. For example, a scalar-to-scalar map
+has the specification <code>@einsum[ -&gt;](x)</code>.</p>
+<p>This grammar is intentionally shorter than the YTL grammar: it adds
+no syntax to YTL and removes every construct that elaboration has
+resolved. In particular, a TTL module cannot declare a helper, reducer,
+or target.</p>
+<p>The subset correspondence is normative:</p>
+<table>
+<thead>
+<tr>
+<th>TTL production</th>
+<th>Restriction of YTL production</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>module</code>, <code>export</code></td>
+<td><code>program</code> and <code>function</code>, with zero
+imports</td>
+</tr>
+<tr>
+<td><code>body</code>, <code>binding</code>, <code>rhs</code>,
+<code>refs</code></td>
+<td><code>expr</code>, <code>binding</code>, <code>prefix</code>, and
+<code>atom</code></td>
+</tr>
+<tr>
+<td><code>primitive</code>, <code>specification</code>,
+<code>pattern</code>, <code>term</code>, <code>factor</code>,
+<code>clause</code></td>
+<td>the same primitive productions; TTL clauses restrict
+<code>reference</code> to <code>target</code></td>
+</tr>
+<tr>
+<td><code>selector</code>, <code>selection</code></td>
+<td>the same selector productions with resolved integer expressions and
+static axes</td>
+</tr>
+<tr>
+<td><code>type</code>, <code>dimension</code>, <code>dtype</code></td>
+<td>the same open nominal dtype production, with complete TTL
+extents</td>
+</tr>
+</tbody>
+</table>
+<p>Accordingly, every sentence derived by the TTL grammar
+<strong>MUST</strong> also be derivable by the YTL grammar. TTL
+restrictions may remove alternatives or replace a YTL <code>expr</code>
+by a literal or identifier, but they <strong>MUST NOT</strong> introduce
+a token, delimiter, ordering, or call envelope absent from YTL.</p>
+<h2 id="4-module-structure-and-namespaces">4. Module structure and
+namespaces</h2>
+<ol type="1">
+<li>A module <strong>MUST NOT</strong> contain an import. Import
+selection is a source-level operation completed before TTL is
+emitted.</li>
+<li>A module <strong>MUST</strong> contain one or more exported function
+definitions.</li>
+<li>It <strong>MUST NOT</strong> contain any other declaration or
+definition.</li>
+<li>Export names <strong>MUST</strong> be unique within the module.</li>
+<li>Tensor parameter names <strong>MUST</strong> be unique within an
+export.</li>
+<li>Tensor binding names <strong>MUST</strong> be unique within an
+export and <strong>MUST NOT</strong> shadow tensor parameters.</li>
+<li>Tensor names in different exports are independent.</li>
+<li>Target names beginning with <code>@</code> occupy a fixed namespace
+and cannot be declared by a module.</li>
+</ol>
+<p><code>%N</code> is an elaborator-generated value name, analogous to a
+numbered SSA value. It may name a TTL binding and may be referenced
+anywhere an earlier binding name is accepted. Parameters and exports
+retain human identifiers. A producer may use <code>%N</code> when no
+useful source name remains; ordinary identifiers have the same binding
+semantics.</p>
+<p>Every tensor operand in a binding <strong>MUST</strong> name a tensor
+parameter or an earlier binding. Every result reference
+<strong>MUST</strong> name a tensor parameter or a binding. These rules
+make the tensor graph finite and topologically ordered.</p>
+<h2 id="5-types-and-abstract-tensor-values">5. Types and abstract tensor
+values</h2>
+<h3 id="51-element-types">5.1 Element types</h3>
+<p>TTL preserves the complete nominal dtype of every elaborated YTL
+value. Its dtype grammar is deliberately open and is exactly the YTL
+dtype grammar. The mandatory <code>ttl.lang</code> target environment
+defines these portable baseline types:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bool</code></td>
+<td>Boolean <code>false</code> or <code>true</code></td>
+</tr>
+<tr>
+<td><code>i32</code></td>
+<td>signed two's-complement integer in <code>[-2^31, 2^31-1]</code></td>
+</tr>
+<tr>
+<td><code>f16</code></td>
+<td>IEEE-754 binary16 value</td>
+</tr>
+<tr>
+<td><code>f32</code></td>
+<td>IEEE-754 binary32 value</td>
+</tr>
+<tr>
+<td><code>f8e4m3fn</code></td>
+<td>finite E4M3 value defined by the YTL LRM</td>
+</tr>
+<tr>
+<td><code>f4e2m1</code></td>
+<td>E2M1 value defined by the YTL LRM</td>
+</tr>
+</tbody>
+</table>
+<p>There is no implicit conversion between element types.</p>
+<p>A target environment <strong>MAY</strong> add nominal dtypes. It
+<strong>MUST</strong> define each added type's value domain and
+canonicalization. TTL structural operations preserve such types without
+interpreting their scalar representation.</p>
+<p>Integer literals have type <code>i32</code>. Floating literals have
+type <code>f32</code>. Boolean literals have type <code>bool</code>.
+Consequently, TTL 0.1 has no textual <code>f16</code> literal.</p>
+<h3 id="52-tensor-types">5.2 Tensor types</h3>
+<p>A tensor type consists of an element type and an ordered list of
+distinct named dimensions. A type with no dimensions is a rank-zero
+tensor, also called a scalar tensor.</p>
+<pre class="text"><code>f32                         scalar
+f32[row=4 column=8]         dense rank-two tensor
+f32[batch=2 $token hidden=64] segmented rank-three tensor</code></pre>
+<p>A static dimension is written <code>name=N</code>, where
+<code>N</code> is a positive <code>i32</code> literal. A dynamic
+dimension is written <code>$name</code> and has no type-level extent.
+Every dimension name <strong>MUST</strong> occur at most once in one
+tensor type.</p>
+<p>Axis names are semantic. Reordering two dimensions changes the type
+even when their extents agree.</p>
+<h3 id="53-dynamic-dimensions">5.3 Dynamic dimensions</h3>
+<p>Let a tensor have axes <code>A = (a0, ..., an-1)</code>. For each
+dynamic axis <code>ak</code>, the tensor carries an abstract
+segment-length function:</p>
+<pre class="text"><code>L_ak : Coord(a0, ..., ak-1) -&gt; non-negative integer</code></pre>
+<p>The function is indexed by the complete coordinate prefix preceding
+the dynamic axis. It is part of the logical tensor value, not a
+prescribed storage format.</p>
+<p>The coordinate set of a tensor is defined recursively. Begin with the
+singleton prefix <code>()</code>. For each axis from left to right:</p>
+<ul>
+<li>if the axis is static with extent <code>N</code>, extend every
+current prefix with <code>0, ..., N-1</code>;</li>
+<li>if the axis is dynamic, extend a prefix <code>p</code> with
+<code>0, ..., L_axis(p)-1</code>.</li>
+</ul>
+<p>A tensor value is a total mapping from this coordinate set to values
+of its element type. Empty dynamic segments are legal, including empty
+segments below another dynamic axis.</p>
+<h3 id="54-static-extent-agreement">5.4 Static extent agreement</h3>
+<p>When an operation aligns two occurrences of the same static axis
+name, their extents <strong>MUST</strong> be equal. Equality of extents
+does not align differently named axes.</p>
+<h3 id="55-dynamic-descriptor-compatibility">5.5 Dynamic descriptor
+compatibility</h3>
+<p>Two occurrences of the same dynamic axis name denote compatible
+logical segments subject to these rules:</p>
+<ol type="1">
+<li>If both descriptors have the same prefix axes, their lengths
+<strong>MUST</strong> agree at every prefix coordinate.</li>
+<li>If one descriptor's prefix axes are an ordered subset of the
+other's, the less-specific length is a capacity and
+<strong>MUST</strong> be at least the corresponding more-specific
+length.</li>
+<li>In a result domain containing both prefix sets, a less-specific
+descriptor is projected to each refined prefix.</li>
+<li>Compatible candidates derive the result length by their pointwise
+minimum.</li>
+<li>A result dynamic axis <strong>MUST</strong> have at least one input
+descriptor whose complete prefix can be projected from the result
+prefix.</li>
+</ol>
+<p>Descriptors with incomparable prefix dependencies may participate
+only when an operation forms a result prefix containing both
+dependencies. The pointwise rule then defines their joint domain.</p>
+<p>All exported arguments <strong>MUST</strong> satisfy these
+compatibility rules before any binding is evaluated. Every binding
+applies the same rules to its operands.</p>
+<h2 id="6-primitive-target-references">6. Primitive target
+references</h2>
+<p>An <code>@einsum</code> map or reduce clause refers directly to one
+operation in the target environment defined in Section 8. It cannot name
+a user-defined function. A map target receives one scalar from each
+tensor operand, in operand order. Its signature <strong>MUST</strong>
+match those element types exactly.</p>
+<p>A reduce target receives the accumulator and next mapped value. It
+<strong>MUST</strong> be registered as a reducer by the target
+environment. Its identity and ordering contract come from that
+environment; they are not repeated or overridden in TTL text.</p>
+<p>Elaboration splits a compound scalar expression into target-atomic
+tensor bindings. Consequently every TTL map and reduction performs at
+most one scalar target operation.</p>
+<h2 id="7-tensor-dataflow">7. Tensor dataflow</h2>
+<h3 id="71-parameters-and-bindings">7.1 Parameters and bindings</h3>
+<p>Exported parameters are the input nodes of the dataflow graph. TTL
+does not classify them as weights, activations, constants, state, or
+invocation data.</p>
+<p>Bindings are evaluated in textual order. Every binding produces one
+immutable tensor value. A binding has no explicit type annotation; its
+type is uniquely determined by its literal or primitive and
+<strong>MUST</strong> satisfy all rules below.</p>
+<h3 id="72-scalar-constants">7.2 Scalar constants</h3>
+<p>A binding whose right-hand side is a literal produces a rank-zero
+tensor of the literal's lexical type. Negative numeric literals retain
+the unsigned literal's type.</p>
+<p>TTL 0.1 has no non-scalar tensor literal.</p>
+<h3 id="73-results">7.3 Results</h3>
+<p>The export result signature contains one or more complete tensor
+types. The result expression contains the same number of references in
+the same order. Each referenced tensor's inferred type
+<strong>MUST</strong> exactly equal the corresponding declared result
+type.</p>
+<p>Multiple results are multiple graph edges. They do not create a tuple
+tensor or a tuple-typed runtime value.</p>
+<h2 id="8-target-environment">8. Target environment</h2>
+<p>A target name is self-identifying syntax: it begins with
+<code>@</code>. TTL neither imports nor declares targets. A TTL consumer
+supplies a target environment when it verifies, executes, or lowers a
+module.</p>
+<p>Every TTL target environment <strong>MUST</strong> implement the
+complete <code>ttl.lang</code> ABI defined by the YTL LRM. It
+<strong>MAY</strong> provide additional targets and dtypes.</p>
+<p>For every referenced target, the environment <strong>MUST</strong>
+provide:</p>
+<ul>
+<li>its ordered input element types and result element type; and</li>
+<li>deterministic scalar semantics over its stated domain; and</li>
+<li>any non-default dynamic-descriptor rule required by that scalar
+operation.</li>
+</ul>
+<p>The default descriptor rule is ordinary pointwise compatibility
+across the mapped operands. A value-selection target identifies which
+operands are the alternatives; those alternatives define one equal
+result domain, while the condition may broadcast over but cannot select
+that domain.</p>
+<p>A target admitted as a reducer <strong>MUST</strong> additionally
+provide one typed scalar literal identity and one contract:
+<code>left_ordered</code>, <code>reassociative</code>, or
+<code>associative</code>. No contract permits permutation of reduction
+leaves. Target results are rounded once to their declared result
+type.</p>
+<p>A module is well formed only relative to a target environment
+containing every target it references. The elaborator and consumer
+<strong>MUST</strong> use environments with identical signatures, scalar
+semantics, reducer identities, and contracts for those names. A
+target-domain violation is a dynamic execution error.</p>
+<p>Target environments are interfaces to a TTL consumer, not module
+imports and not additions to the TTL grammar. A consumer may define a
+profile requiring a particular environment; such a profile does not
+change TTL.</p>
+<h2 id="9-einsum">9. <code>@einsum</code></h2>
+<h3 id="91-form-and-static-constraints">9.1 Form and static
+constraints</h3>
+<p>An <code>@einsum</code> has one input pattern per tensor operand
+followed by one result pattern.</p>
+<ol type="1">
+<li>It <strong>MUST</strong> have at least one operand.</li>
+<li>Every pattern term <strong>MUST</strong> be a bare axis name.</li>
+<li>Input pattern <code>i</code> <strong>MUST</strong> exactly equal
+operand <code>i</code>'s ordered axes.</li>
+<li>The result pattern <strong>MUST NOT</strong> contain duplicate
+axes.</li>
+<li>Every result axis <strong>MUST</strong> occur in at least one input
+pattern.</li>
+<li>Static extents of aligned axes <strong>MUST</strong> agree.</li>
+<li>If present, <code>map</code> <strong>MUST</strong> name a compatible
+target in the target environment. If absent, <code>@einsum</code>
+<strong>MUST</strong> have one operand and maps it identically.</li>
+<li>A <code>reduce</code> clause is <strong>REQUIRED</strong> exactly
+when at least one iteration axis is absent from the result, and
+forbidden otherwise.</li>
+</ol>
+<p>There is no implicit multiplication or addition in TTL.</p>
+<h3 id="92-iteration-axes-and-projections">9.2 Iteration axes and
+projections</h3>
+<p>The iteration-axis list is the ordered union of input axes: visit
+operands from left to right and each operand's axes from left to right,
+retaining the first occurrence of each name.</p>
+<p>Each operand projection selects from an iteration coordinate the
+positions named by that operand's pattern, in pattern order. An operand
+missing an iteration axis is broadcast across that axis. This broadcast
+is explicit in the patterns; it is not inferred from trailing positions
+or equal extents.</p>
+<p>The reduced axes are the iteration axes absent from the result
+pattern, in iteration order.</p>
+<h3 id="93-non-reducing-map">9.3 Non-reducing map</h3>
+<p>When there are no reduced axes, <code>@einsum</code> is a regular
+named-axis map. For each result coordinate:</p>
+<ol type="1">
+<li>project the coordinate into each operand;</li>
+<li>read one scalar from each operand;</li>
+<li>apply the map target, or read the sole operand unchanged; and</li>
+<li>store the mapped scalar at that result coordinate.</li>
+</ol>
+<p>The result element type is the map target's result type, or the sole
+operand's type for identity mapping.</p>
+<p>If the target environment marks a map operation as value selection,
+its two alternative operands define the result dynamic descriptor and
+<strong>MUST</strong> have equal segment lengths at every result prefix.
+The Boolean condition may be less specific only when it covers the
+complete alternative domain. A condition cannot select a result
+shape.</p>
+<h3 id="94-reduction">9.4 Reduction</h3>
+<p>When reduced axes exist, iteration coordinates are enumerated
+lexicographically in iteration-axis order, with each coordinate
+increasing from zero. For each result coordinate, mapped values whose
+projected result coordinate is equal form one ordered reduction
+group.</p>
+<p>Every valid result coordinate has a group, even when its reduced
+domain is empty. Evaluation initializes the accumulator to the reducer
+identity and then applies:</p>
+<pre class="text"><code>accumulator := reduce_target(accumulator, mapped_value)</code></pre>
+<p>for the group's mapped values in order. An empty group therefore
+produces the identity.</p>
+<p>The reducer target input type <strong>MUST</strong> equal the map
+result type. The <code>@einsum</code> result element type is the reducer
+result type.</p>
+<h3 id="95-dynamic-result-domain">9.5 Dynamic result domain</h3>
+<p>The result's dynamic descriptors are derived by the compatibility and
+pointwise rules in Section 5.5. Every result dynamic axis must retain
+enough of its source prefix to project at least one descriptor. Dropping
+a varying prefix while retaining its dynamic axis is invalid.</p>
+<h2 id="10-gather">10. <code>@gather</code></h2>
+<h3 id="101-form">10.1 Form</h3>
+<pre class="ttl"><code>@gather[source-axis -&gt; inserted-axes](data, indices)</code></pre>
+<p><code>data</code> may have any TTL element type. <code>indices</code>
+<strong>MUST</strong> have element type <code>i32</code>. The source
+side <strong>MUST</strong> name exactly one axis of
+<code>data</code>.</p>
+<p>Let <code>R</code> be the ordered data axes after removing the source
+axis. The inserted axes <strong>MUST</strong> be exactly the index axes
+that do not occur in <code>R</code>, in index-axis order. Every other
+index axis is a shared axis and <strong>MUST</strong> occur in
+<code>R</code> with a compatible extent or dynamic descriptor.</p>
+<p>The result axes are formed from the data axes by replacing the source
+axis with the inserted axes. Shared index axes retain their positions
+from <code>data</code>. The result element type is the data element
+type.</p>
+<h3 id="102-evaluation">10.2 Evaluation</h3>
+<p>For each result coordinate:</p>
+<ol type="1">
+<li>project the coordinate onto the index axes and read integer
+<code>j</code>;</li>
+<li>construct a data coordinate from the result's remaining data axes
+and set the source-axis coordinate to <code>j</code>; and</li>
+<li>read that data element into the result coordinate.</li>
+</ol>
+<p><code>j</code> <strong>MUST</strong> be non-negative and inside the
+source-axis domain at that complete data prefix. Otherwise evaluation
+fails with an out-of-bounds error.</p>
+<p>Dynamic result axes are derived from aligned data and index
+descriptors. A gather into a segmented suffix additionally checks the
+selected data coordinate against that suffix's per-prefix segment
+lengths.</p>
+<h2 id="11-static-subviews">11. Static subviews</h2>
+<h3 id="111-form-and-constraints">11.1 Form and constraints</h3>
+<p>A subview selects one or more distinct static axes of an earlier
+tensor:</p>
+<pre class="ttl"><code>x[layer=1]
+x[row=1:3, column=0]</code></pre>
+<p>Every selected axis <strong>MUST</strong> exist in the source and
+<strong>MUST</strong> be static.</p>
+<p>For an index selection <code>axis=i</code> with source extent
+<code>N</code>:</p>
+<pre class="text"><code>0 &lt;= i &lt; N</code></pre>
+<p>The selected axis is removed from the result.</p>
+<p>For a range selection <code>axis=begin:end</code>:</p>
+<pre class="text"><code>0 &lt;= begin &lt; end &lt;= N</code></pre>
+<p>The axis remains in the result with extent
+<code>end - begin</code>.</p>
+<p>Unselected axes retain their order, kind, and extent. The result
+element type equals the source element type.</p>
+<h3 id="112-evaluation">11.2 Evaluation</h3>
+<p>An index selection fixes the source coordinate to <code>i</code>. A
+range selection maps result coordinate <code>r</code> to source
+coordinate <code>r + begin</code>. Multiple selections are applied
+simultaneously.</p>
+<p>Selecting and dropping a static axis before a dynamic axis
+specializes the dynamic descriptor to the selected prefix. Range
+selection restricts and renumbers the corresponding prefix coordinates.
+This is permitted even though the resulting dynamic axis has fewer
+prefix axes.</p>
+<h2 id="12-single-source-rearrange">12. Single-source
+<code>@rearrange</code></h2>
+<h3 id="121-purpose">12.1 Purpose</h3>
+<p>A single-source <code>@rearrange</code> defines a value-independent
+bijective index map using permutation, static split/merge,
+extent-preserving rename, and insertion of statically known extent-one
+logical axes.</p>
+<p>It never inspects or combines element values.</p>
+<h3 id="122-patterns">12.2 Patterns</h3>
+<p>The physical axis names of the input pattern <strong>MUST</strong>
+exactly equal the source tensor's ordered axes. The physical axis names
+of the output pattern define the result axes and <strong>MUST</strong>
+be unique.</p>
+<p>A bare term <code>a</code> introduces logical axis <code>a</code>. A
+composite term <code>physical=(a b ... z)</code> says that the physical
+axis is the row-major product of the listed logical factors, with the
+last factor varying fastest.</p>
+<p>A static factor's first occurrence <strong>MUST</strong> carry its
+resolved extent unless that extent is already established by an earlier
+bare input term. Thus TTL may write <code>group=(high=2 low=2)</code>.
+Later occurrences of <code>high</code> and <code>low</code> may omit the
+annotations. Repeated annotations <strong>MUST</strong> agree. A dynamic
+factor <strong>MUST NOT</strong> carry an extent. These annotations make
+every rearrange self-contained; no external axis environment
+participates in TTL typing.</p>
+<p>Every input physical extent <strong>MUST</strong> equal the product
+of its logical factor extents. Factor extents must be uniquely
+determined from input extents and the complete result type. A logical
+name absent from the input is permitted only when its result extent is
+one.</p>
+<p>Every non-unit logical input axis <strong>MUST</strong> occur exactly
+once in the output. Every non-unit logical output axis
+<strong>MUST</strong> occur exactly once in the input. Dropping,
+duplicating, or repeating a non-unit logical coordinate is
+forbidden.</p>
+<h3 id="123-dynamic-restriction">12.3 Dynamic restriction</h3>
+<p>A dynamic physical axis may occur only as an unfactored bare term or
+as the sole factor of a dynamic result term. TTL 0.1 cannot split,
+merge, or factor a dynamic dimension. Any renamed dynamic result axis
+<strong>MUST</strong> also begin with <code>$</code>.</p>
+<p>The rearrangement must induce a valid complete-prefix segment
+function for every output dynamic axis. No physical descriptor encoding
+is prescribed.</p>
+<h3 id="124-coordinate-map">12.4 Coordinate map</h3>
+<p>Splitting physical coordinate <code>p</code> into factors with
+extents <code>(N0, ..., Nk-1)</code> uses mixed-radix row-major
+coordinates:</p>
+<pre class="text"><code>ik = p mod Nk
+p  = p div Nk</code></pre>
+<p>applied from the last factor to the first. Merging factor coordinates
+uses:</p>
+<pre class="text"><code>p = (((i0 * N1 + i1) * N2 + i2) ...)</code></pre>
+<p>The output value at the resulting coordinate is the source value at
+the original coordinate. The map <strong>MUST</strong> produce each
+result coordinate exactly once.</p>
+<h2 id="13-multi-source-rearrange">13. Multi-source
+<code>@rearrange</code></h2>
+<h3 id="131-static-constraints">13.1 Static constraints</h3>
+<p>With two or more operands, <code>@rearrange</code> is ordered
+composition along one axis.</p>
+<ol type="1">
+<li>Every input and output term <strong>MUST</strong> be bare.</li>
+<li>There <strong>MUST</strong> be one input pattern per operand.</li>
+<li>Every input pattern <strong>MUST</strong> exactly match its operand
+axes.</li>
+<li>All inputs and the output <strong>MUST</strong> have equal
+rank.</li>
+<li>All operands <strong>MUST</strong> have one element type.</li>
+<li>Exactly one axis position is the composition position.</li>
+<li>At least one input must rename that position relative to the output,
+making the position explicit.</li>
+<li>Every non-composition position <strong>MUST</strong> have the same
+axis name, static extent, and dynamic descriptor domain in every input
+and the output.</li>
+</ol>
+<p>If all source composition axes are static, a static result extent is
+their sum. If any source composition axis is dynamic, the result
+composition axis <strong>MUST</strong> be dynamic. A dynamic result axis
+may also compose static source axes, producing equal segment lengths at
+each valid prefix.</p>
+<h3 id="132-evaluation">13.2 Evaluation</h3>
+<p>For each complete prefix preceding the composition position, source
+segments are concatenated in operand order. A source coordinate
+<code>i</code> from operand <code>k</code> maps to:</p>
+<pre class="text"><code>i + sum(length of operand j at this prefix, for 0 &lt;= j &lt; k)</code></pre>
+<p>All other coordinates are unchanged. Empty source segments are legal.
+For a dynamic result, its per-prefix length is the sum of source lengths
+at that prefix.</p>
+<h2 id="14-evaluation-and-errors">14. Evaluation and errors</h2>
+<h3 id="141-invocation">14.1 Invocation</h3>
+<p>An invocation supplies exactly one tensor value for every exported
+parameter. Each value's element type, ordered axes, static extents, and
+dynamic prefix structure <strong>MUST</strong> match its parameter type.
+Extra or missing arguments are invalid.</p>
+<h3 id="142-evaluation-order">14.2 Evaluation order</h3>
+<p>Bindings are evaluated in textual order. Scalar target arguments are
+evaluated left to right. Tensor coordinates are enumerated
+lexicographically in their declared axis order. Reduction order is
+additionally constrained by its reducer contract.</p>
+<p>Because tensor values are immutable and tensor bindings have no side
+effects, an implementation may use a different execution order only when
+it preserves the numerical permissions of the declared scalar and
+reduction contracts.</p>
+<h3 id="143-rounding">14.3 Rounding</h3>
+<p>An <code>f16</code> or <code>f32</code> input element is rounded to
+its declared format when the tensor value is formed. Each scalar target
+result is rounded to its declared format. <code>i32</code> operations
+and conversions reject values outside the signed 32-bit range.</p>
+<h3 id="144-dynamic-errors">14.4 Dynamic errors</h3>
+<p>A statically well-formed program may still fail at invocation or
+evaluation for:</p>
+<ul>
+<li>an argument that does not match its declared tensor type;</li>
+<li>incompatible segment lengths for a repeated dynamic axis;</li>
+<li>a missing dynamic descriptor for a required result prefix;</li>
+<li>a gather index outside its selected source domain;</li>
+<li>a scalar target operand outside the defined numerical domain;
+or</li>
+<li>a rearrange whose runtime dynamic coordinate map is not total and
+one-to-one.</li>
+</ul>
+<p>Such conditions <strong>MUST</strong> be reported as errors. Silent
+truncation, padding, wrapping, clamping, or undefined behavior is
+forbidden.</p>
+<h2 id="15-static-well-formedness-checklist">15. Static well-formedness
+checklist</h2>
+<p>A TTL 0.1 module is well formed only if all of the following
+hold:</p>
+<ol type="1">
+<li>It satisfies the complete grammar in Section 3.</li>
+<li>It has no imports, one or more exports, and no other
+declarations.</li>
+<li>Every type is complete and uses a valid nominal dtype and
+dimensions.</li>
+<li>Names are unique in their required namespaces.</li>
+<li>Every tensor operand is a parameter or earlier binding.</li>
+<li>Every map and reduce clause directly names a compatible operation in
+the supplied target environment.</li>
+<li>Every reducer target uses its target-environment identity and
+contract.</li>
+<li>Every tensor primitive has its exact arity, patterns, clauses, and
+result type.</li>
+<li>Every static axis alignment has equal extents.</li>
+<li>Every dynamic result descriptor is derivable from its operands or
+the explicit subview/rearrange mapping.</li>
+<li>Every binding has one uniquely inferred tensor type.</li>
+<li>Result-reference arity and types exactly match the export
+signature.</li>
+<li>Every export's dataflow graph is finite and topologically
+ordered.</li>
+</ol>
+<h2 id="16-complete-examples">16. Complete examples</h2>
+<p>The examples that name <code>@multiply_f32</code> and
+<code>@add_f32</code> assume a target environment providing the
+signatures and semantics suggested by those names. The other examples
+require no scalar targets.</p>
+<h3 id="161-dense-linear-projection">16.1 Dense linear projection</h3>
+<pre class="ttl"><code>export function linear(
+    x: f32[row=2 shared=3],
+    weight: f32[shared=3 column=4]
+) -&gt; f32[row=2 column=4] =
+    let
+        %2 = @einsum[
+            row shared,
+            shared column
+            -&gt; row column
+        ](x, weight) map=@multiply_f32 reduce=@add_f32
+    in
+        %2;
+
+export function identity(
+    x: f32[row=2 shared=3]
+) -&gt; f32[row=2 shared=3] = x;</code></pre>
+<p>The first binding maps <code>@multiply_f32</code> and reduces
+<code>shared</code> with the target environment's <code>@add_f32</code>
+identity and order in one einsum. The second export shows that a TTL
+module may carry several independent entry points.</p>
+<h3 id="162-dynamic-ordered-composition">16.2 Dynamic ordered
+composition</h3>
+<pre class="ttl"><code>export function append(
+    past: f32[batch=2 $past channel=4],
+    step: f32[batch=2 $step channel=4]
+) -&gt; f32[batch=2 $source channel=4] =
+    let
+        %2 = @rearrange[
+            batch $past channel,
+            batch $step channel
+            -&gt; batch $source channel
+        ](past, step)
+    in
+        %2;</code></pre>
+<p>For each <code>batch</code> coordinate, <code>$source</code> is the
+ordered concatenation of that batch's <code>$past</code> and
+<code>$step</code> segments. Different batches may have different
+lengths, and either source segment may be empty.</p>
+<h3 id="163-gather-and-subview">16.3 Gather and subview</h3>
+<pre class="ttl"><code>export function lookup_layer(
+    tables: f32[layer=2 vocabulary=5 channel=3],
+    ids: i32[batch=2 token=4]
+) -&gt; f32[batch=2 token=4 channel=3] =
+    let
+        %2 = tables[layer=1];
+        %3 = @gather[vocabulary -&gt; batch token](%2, ids)
+    in
+        %3;</code></pre>
+<p>The subview removes <code>layer</code>; gather then replaces
+<code>vocabulary</code> with the two index axes
+<code>batch token</code>.</p>
+<h3 id="164-self-contained-factorization">16.4 Self-contained
+factorization</h3>
+<pre class="ttl"><code>export function split_hidden(
+    x: f32[hidden=8]
+) -&gt; f32[head=2 channel=4] =
+    let
+        %1 = @rearrange[
+            hidden=(head=2 channel=4)
+            -&gt; head channel
+        ](x)
+    in
+        %1;</code></pre>
+<p>The factor annotations make the split uniquely recoverable from this
+module. No external declaration of <code>head</code> or
+<code>channel</code> is required.</p>
+</body>
+</html>

@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>TTL Language Reference Manual 1.0</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="manual.css" />
+</head>
+<body>
+<h1 id="ttl-language-reference-manual-10">TTL Language Reference Manual
+1.0</h1>
+<p>Jianwen Zhu</p>
+<p>Version 1.0</p>
+<h2 id="status-and-normative-language">Status and normative
+language</h2>
+<p>This document is the normative definition of TTL 1.0, implemented by
+the accompanying reference parser, verifier, and interpreter. It does
+not reinterpret artifacts governed by the earlier <a
+href="ttl-lrm.html">TTL 0.1 manual</a>.</p>
+<p>TTL, the <strong>Tiny Tensor Language</strong>, is a flat, fully
+typed, primitive-only language intended as a compact interchange between
+tensor frontends, interpreters, and lowering compilers. This manual
+defines TTL without requiring knowledge of any source language.</p>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>,
+<strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL
+NOT</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>,
+<strong>MAY</strong>, and <strong>OPTIONAL</strong> are to be
+interpreted as described by RFC 2119 and RFC 8174 when, and only when,
+they appear in bold. In brief, <strong>MUST</strong> and
+<strong>REQUIRED</strong> state conformance requirements, <strong>MUST
+NOT</strong> states a prohibition, <strong>SHOULD</strong> states a
+recommendation that requires a documented reason to disregard, and
+<strong>MAY</strong> marks an allowed choice.</p>
+<h2 id="1-overview">1. Overview</h2>
+<p>TTL describes the mathematical dataflow of a tensor computation after
+all source-level composition has been completed. A
+<strong>producer</strong> emits TTL. A <strong>consumer</strong> parses
+and checks that TTL and may interpret it or lower it to another
+representation. One possible producer is an <strong>elaborator</strong>,
+a frontend phase that replaces higher-level source constructs with
+explicit TTL.</p>
+<p>TTL assumes no particular source language. It is itself a small
+programming language with the following abstract objects:</p>
+<ul>
+<li>An <strong>element type</strong>, or <strong>dtype</strong>,
+describes one scalar element, such as <code>f32</code>.</li>
+<li>An <strong>axis</strong> names one independent coordinate dimension.
+Its identity and its extent are separate properties.</li>
+<li>An <strong>axis domain</strong> is the set of valid coordinates for
+one axis occurrence.</li>
+<li>A <strong>tensor</strong> maps every valid combination of its named
+coordinates to one element. Its <strong>rank</strong> is its number of
+axes; a rank-zero tensor is a <strong>scalar</strong>.</li>
+<li>A <strong>tensor type</strong> gives a dtype and a finite set of
+named axis domains.</li>
+<li>A <strong>value</strong> is an immutable scalar or tensor.</li>
+<li>A <strong>module</strong> is one TTL source unit containing axis
+declarations, globals, and exports.</li>
+<li>A <strong>global</strong> is an immutable module input shared by all
+invocations of the module's exports.</li>
+<li>An <strong>export</strong> is an externally callable function. Its
+parameters and globals are input nodes, its bindings are computation
+nodes, and its result references are output edges.</li>
+<li>A <strong>primitive expression</strong> is either a pointwise target
+application or one of TTL's four coordinate operations:
+<code>@einsum</code>, <code>@gather</code>, <code>@scatter</code>, or
+<code>@rearrange</code>.</li>
+<li>A <strong>target operation</strong> is a pure scalar operation
+supplied by the consumer, such as <code>@multiply_f32</code>. It may be
+lifted pointwise over tensor operands, used as the map of an
+<code>@einsum</code>, or used as a <strong>reducer</strong>, which
+combines an unordered collection of mapped scalars using a declared
+identity.</li>
+</ul>
+<p>These objects form a finite <strong>dataflow graph</strong>: a node
+is an input, constant, selector, or primitive result, and a directed
+edge means that one node consumes another node's value. The graph has no
+cycles:</p>
+<pre class="text"><code>parameters, globals, scalar literals
+                 |
+                 v
+       primitive and selector bindings
+                 |
+                 v
+           result references</code></pre>
+<p>Every reference points to a parameter, global, or earlier binding.
+TTL has no source-defined operation, general call expression, recursion,
+or compile-time control flow.</p>
+<p>A straightforward consumer can therefore be organized as this
+pipeline:</p>
+<pre class="text"><code>source characters
+    -&gt; lexer (tokens)
+    -&gt; parser (syntax tree)
+    -&gt; name resolver
+    -&gt; type and primitive verifier
+    -&gt; interpreter or lower-level representation</code></pre>
+<p>A <strong>lexer</strong> recognizes the tokens in Section 2.1. A
+<strong>parser</strong> recognizes the grammar in Section 2.2. A
+<strong>name resolver</strong> connects every name use to its
+declaration or binding. A <strong>verifier</strong> applies the
+contextual rules in Sections 3 through 8. An interpreter evaluates the
+verified graph; a lowering compiler translates it to another
+representation. This organization is illustrative, not required:
+conformance depends on observable acceptance and semantics, not on
+internal compiler phases.</p>
+<p>A first implementation need not optimize. It can store each tensor as
+a map from named coordinate assignments to scalar values, enumerate the
+finite coordinate domains described by each primitive, and materialize
+every binding in source order. This direct model is sufficient to
+implement all observable TTL semantics. Appendix A gives a compact
+implementation sequence.</p>
+<p>TTL specifies values and results, not their implementation. Storage,
+physical layout, loops, scheduling, tiling, kernels, synchronization,
+devices, and host orchestration are outside the language. The graph is
+finite, but finiteness does not prescribe coordinate traversal,
+reduction grouping, or one bit pattern for approximate floating-point
+results.</p>
+<p>The consumer supplies a <strong>target environment</strong>
+containing scalar dtypes, target signatures, target semantics, and
+reducer metadata. Every conforming environment implements the portable
+<code>ttl.lang</code> baseline defined in Section 6. Target names are
+self-identifying through their <code>@</code> prefix and require no TTL
+declaration.</p>
+<h3 id="11-complete-introductory-example">1.1 Complete introductory
+example</h3>
+<pre class="ttl"><code>axis row := 2, shared := 3, column := 4;
+
+global weight: f32[shared column];
+
+export function linear(
+    x: f32[row shared]
+) -&gt; f32[row column] :=
+    let
+        %0 = @einsum[
+            row shared,
+            shared column
+            -&gt; row column
+        ](x, weight) map=@multiply_f32 reduce=@add_f32
+    in
+        %0;</code></pre>
+<p>The first line declares three axis identities and their extents.
+<code>weight</code> is a module input, while <code>x</code> is supplied
+on each invocation of <code>linear</code>. The two input patterns of
+<code>@einsum</code> describe the axes of <code>x</code> and
+<code>weight</code>. Equal axis names align. <code>shared</code> is
+absent from the result pattern, so it is reduced; <code>row</code> and
+<code>column</code> remain in the result. At every contributing
+coordinate the map target multiplies one element of each operand, and
+the reduce target adds the mapped values. <code>%0</code> names the
+resulting tensor and is the export's result.</p>
+<p>Sections 4 through 7 define each of these statements precisely.</p>
+<h2 id="2-complete-syntax">2. Complete syntax</h2>
+<h3 id="21-lexical-specification">2.1 Lexical specification</h3>
+<p>Source text is Unicode, but every TTL token is ASCII. Whitespace and
+comments may occur between tokens and are discarded. They cannot occur
+within a token. <code>//</code> begins a line comment. <code>/*</code>
+and <code>*/</code> delimit a non-nesting block comment. Any non-ASCII
+character outside whitespace or a comment is a lexical error.</p>
+<pre class="ebnf"><code>id          ::= /[A-Za-z_][A-Za-z0-9_]*/ ;
+integer     ::= /0|[1-9][0-9]*/ ;
+float       ::= /([0-9]+\.[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?/
+              | /[0-9]+[eE][+-]?[0-9]+/ ;
+at-id       ::= /@[A-Za-z_][A-Za-z0-9_]*/ ;
+perc-id     ::= /%(0|[1-9][0-9]*)/ ;
+dollar-id   ::= /\$[A-Za-z_][A-Za-z0-9_]*/ ;</code></pre>
+<p>Text between <code>/</code> delimiters is a regular expression.
+Within it, <code>[abc]</code> matches one listed character,
+<code>A-Z</code> denotes a character range, juxtaposition forms a
+sequence, <code>|</code> separates alternatives, parentheses group
+expressions, <code>X*</code> and <code>X+</code> mean zero-or-more and
+one-or-more, <code>X?</code> means optional, and a backslash quotes
+punctuation such as <code>.</code> or <code>$</code>.</p>
+<p><code>at-id</code>, <code>perc-id</code>, and <code>dollar-id</code>
+are each one token; whitespace cannot separate the prefix from its body.
+Leading zeroes are forbidden in a multi-digit <code>integer</code> or
+<code>perc-id</code> number. Quoted words in the syntactic grammar are
+reserved tokens and are not <code>id</code> tokens. Quoted punctuation
+in that grammar also denotes tokens.</p>
+<h3 id="22-syntactic-grammar">2.2 Syntactic grammar</h3>
+<p><code>::=</code> defines a production, <code>|</code> separates
+alternatives, adjacent terms form a sequence, and parentheses group
+terms. <code>X?</code>, <code>X*</code>, and <code>X+</code> mean
+optional, zero-or-more, and one-or-more. Quoted text is literal syntax;
+unquoted names are nonterminals defined elsewhere in the grammar.
+<code>EOF</code> is the end of the source file.</p>
+<pre class="ebnf"><code>program     ::= axis-decl* global* function+ EOF ;
+axis-decl   ::= &quot;axis&quot; axis-definition (&quot;,&quot; axis-definition)* &quot;;&quot; ;
+axis-definition ::= static-axis-definition | dynamic-axis-definition ;
+static-axis-definition ::= id &quot;:=&quot; integer ;
+dynamic-axis-definition ::= dollar-id (&quot;over&quot; axis+)? ;
+global      ::= &quot;global&quot; id &quot;:&quot; type &quot;;&quot; ;
+
+function    ::= &quot;export&quot; &quot;function&quot; id
+                &quot;(&quot; (param (&quot;,&quot; param)*)? &quot;)&quot;
+                &quot;-&gt;&quot; results &quot;:=&quot; expr &quot;;&quot; ;
+param       ::= id &quot;:&quot; type ;
+results     ::= type | &quot;(&quot; type (&quot;,&quot; type)+ &quot;)&quot; ;
+type        ::= id (&quot;[&quot; dimension* &quot;]&quot;)? ;
+dimension   ::= static-dimension | dynamic-dimension ;
+static-dimension ::= id (&quot;:=&quot; integer)? ;
+dynamic-dimension ::= dollar-id ;
+
+expr        ::= let-expr | id | perc-id
+              | &quot;(&quot; (id | perc-id) (&quot;,&quot; (id | perc-id))+ &quot;)&quot; ;
+let-expr    ::= &quot;let&quot; binding (&quot;;&quot; binding)* &quot;in&quot;
+                (id | perc-id
+                 | &quot;(&quot; (id | perc-id) (&quot;,&quot; (id | perc-id))+ &quot;)&quot;) ;
+binding     ::= (id | perc-id) &quot;=&quot;
+                (literal | &quot;-&quot; (integer | float | &quot;inf&quot;)
+                 | (id | perc-id) selector | primitive) ;
+
+selector    ::= &quot;[&quot; selection (&quot;,&quot; selection)* &quot;]&quot; ;
+selection   ::= id &quot;=&quot; integer (&quot;:&quot; integer)? ;
+
+primitive   ::= at-id (&quot;[&quot; axis-spec &quot;]&quot;)?
+                &quot;(&quot; (id | perc-id) (&quot;,&quot; (id | perc-id))* &quot;)&quot;
+                ((&quot;map&quot; | &quot;reduce&quot;) &quot;=&quot; at-id)* ;
+axis-spec   ::= axis-pattern (&quot;,&quot; axis-pattern)* &quot;-&gt;&quot; axis-pattern ;
+axis-pattern ::= (axis | id &quot;:=&quot; integer | axis-product)* ;
+axis-product ::= axis &quot;:=&quot; &quot;[&quot; axis (&quot;*&quot; axis)+ &quot;]&quot; ;
+
+axis        ::= id | dollar-id ;
+literal     ::= integer | float | &quot;inf&quot; | &quot;true&quot; | &quot;false&quot; ;</code></pre>
+<p>Thus an axis pattern is a sequence of only three item forms: an axis
+<code>a</code>, a static axis whose domain is defined by an extent
+<code>a := N</code>, or a one-level axis product
+<code>p := [a * b * ...]</code>. The <code>:=</code> token defines an
+axis domain, either by an extent or by a product; square brackets
+distinguish a structural product from an extent expression, and
+<code>*</code> separates the product's ordered factors. A product has at
+least two factors, and each factor is only an axis, so the notation
+defines neither aliasing nor a recursive or nested axis structure.</p>
+<p>The <strong>axis set denoted by a pattern</strong> contains the
+identity written by each bare axis or extent definition and the
+left-hand, parent identity of each axis product. The factors inside an
+axis product are relation metadata; they are not additional members of
+that pattern's axis set. Thus
+<code>batch hidden := [head * channel]</code> denotes
+<code>{batch, hidden}</code>, not
+<code>{batch, hidden, head, channel}</code>. Section 7.4 requires
+<code>head</code> and <code>channel</code> to occur on the opposite side
+of that rearrangement relation.</p>
+<p>TTL distinguishes definition from binding. <code>:=</code> defines an
+export body or an axis domain; <code>=</code> binds a local value,
+selector coordinate or range, or named primitive clause. The two roles
+do not overlap.</p>
+<p>A primitive operand name is not necessarily a global. It may resolve
+to an export parameter, a global, or an earlier binding. Literals enter
+the flat dataflow as bindings before a primitive consumes them. For
+example:</p>
+<pre class="ttl"><code>let
+    %0 = 2.0;
+    %1 = @einsum[row, -&gt; row](x, %0)
+         map=@multiply_f32
+in
+    %1</code></pre>
+<p>Here <code>x</code> is an export parameter, <code>%0</code> is a
+local scalar literal binding, and the empty second input pattern denotes
+its rank-zero axis set. No global is required.</p>
+<p>An integer used as a static extent <strong>MUST</strong> be in
+<code>1 .. 2147483647</code>. Empty patterns denote rank-zero tensors.
+Section 4.3 defines scalar literal ranges.</p>
+<p>The bracketed form names one of the coordinate primitives
+<code>@einsum</code>, <code>@gather</code>, <code>@scatter</code>, and
+<code>@rearrange</code>. The unbracketed form names a target operation
+and is defined in Section 6.1. A direct target application has no
+<code>map</code> or <code>reduce</code> clause. The primitive-specific
+sections below further restrict patterns, operands, and clauses. A
+bracketed primitive contains at most one <code>map</code> clause and at
+most one <code>reduce</code> clause. Clause order has no meaning.</p>
+<h2 id="3-static-validity-and-names">3. Static validity and names</h2>
+<p>Parsing establishes only grammatical structure. A <strong>static
+error</strong> is an invalid program that a consumer must reject before
+execution. Examples include an unresolved name, an invalid extent, a
+type mismatch, and an incompatible primitive axis specification. A
+<strong>dynamic error</strong> can be detected only for a particular
+invocation, such as an out-of-domain gather index. Section 8 gives the
+complete error requirements.</p>
+<p>TTL uses distinct namespaces for:</p>
+<ul>
+<li>concrete axes declared by <code>axis</code>;</li>
+<li>dtypes and target operations supplied by the target
+environment;</li>
+<li>exports declared by <code>export function</code>; and</li>
+<li>tensor values: module globals and, within each export, parameters
+and bindings.</li>
+</ul>
+<p>An axis name is resolved only in an axis position, and a dtype is
+resolved only at the start of a type. An <code>at-id</code> resolves
+only in the target environment. These contextual namespaces allow an
+axis and a tensor value to have the same <code>id</code> spelling
+without ambiguity.</p>
+<p>Global names are distinct. Export names are distinct. Within an
+export, parameter and binding names are pairwise distinct and do not
+shadow globals. An <code>id</code> used as a value reference resolves to
+the unique parameter, earlier binding, or global of that spelling. A
+<code>perc-id</code> may name only a binding and must refer to an
+earlier binding. Forward references and unresolved references are static
+errors. Names in different exports are independent.</p>
+<p>The grammar deliberately admits some forms that these and later
+contextual rules reject, including duplicate primitive clauses and an
+<code>@</code> name used in the wrong role. Such rejection is a static
+error, not an alternative parse.</p>
+<h2 id="4-axes-and-tensor-types">4. Axes and tensor types</h2>
+<h3 id="41-concrete-axis-identities">4.1 Concrete axis identities</h3>
+<p>Every axis identity used by a TTL module <strong>MUST</strong> be
+declared exactly once. Repeated occurrences of the same name denote the
+same concrete identity; no occurrence is a generic placeholder or an
+alias.</p>
+<p>A <strong>static axis</strong> is written with an <code>id</code>.
+Its declaration gives one resolved, positive integer base extent. A
+<strong>dynamic axis</strong> is written with a <code>dollar-id</code>.
+Its extent is supplied at invocation time and may vary with coordinates
+of other axes. The optional <code>over</code> clause declares those
+direct dependencies:</p>
+<pre class="ttl"><code>axis batch := 2, hidden := 4096,
+     $sentence over batch, $token over $sentence;</code></pre>
+<p>Let <code>parents(a)</code> be the unordered set written after
+<code>over</code>. The strict transitive closure of <code>parents</code>
+is the semantic dependency partial order, and <code>support(a)</code> is
+the set of all predecessors of <code>a</code>. The graph
+<strong>MUST</strong> be acyclic. Declaration order has no meaning.
+Every parent <strong>MUST</strong> be a declared axis. A dynamic axis
+without <code>over</code> is a root.</p>
+<p>For the declaration above:</p>
+<pre class="text"><code>support($sentence) = {batch}
+support($token)    = {batch, $sentence}</code></pre>
+<p>A runtime value containing <code>$sentence</code> carries a length
+for each <code>batch</code> coordinate. A value containing
+<code>$token</code> carries a length for each
+<code>(batch, $sentence)</code> coordinate. For example, an invocation
+may supply:</p>
+<pre class="text"><code>length_sentence(batch=0) = 3
+length_sentence(batch=1) = 2
+length_token(batch=0, sentence=0) = 5</code></pre>
+<p>These equations describe logical domains; TTL does not prescribe
+their memory representation.</p>
+<p>A bare static dimension uses its declared extent:</p>
+<pre class="ttl"><code>f32[batch hidden]</code></pre>
+<p>A dynamic dimension states that its domain is supplied by the runtime
+value:</p>
+<pre class="ttl"><code>f32[batch $sentence $token]</code></pre>
+<p>Its runtime descriptor carries its extent at each support coordinate.
+The descriptor <strong>MUST</strong> conform to the module's dependency
+partial order. Primitive axis patterns name only identities; their
+domains come from typed operands and the primitive's coordinate
+relation.</p>
+<h3 id="42-tensor-types-and-domains">4.2 Tensor types and domains</h3>
+<p>A tensor type is an element dtype and a finite mapping from axis
+identities to coordinate domains. It is not an ordered shape:</p>
+<pre class="ttl"><code>f32[batch hidden]
+f32[hidden batch]</code></pre>
+<p>These two spellings denote the same type. A bare static dimension
+uses its declared base extent. An explicit <code>a := N</code> gives
+that occurrence the positive extent <code>N</code>; this is the form
+used for a smaller, reindexed domain produced by a slice. No type
+contains one axis identity twice. A dynamic dimension cannot carry an
+inline extent.</p>
+<p>Consequently, two values may use the same static axis identity with
+different local extents, for example <code>f32[token]</code> and
+<code>f32[token := 4]</code>. They are not the same tensor type. The
+shared identity says that their coordinates have the same meaning; the
+local domains say which coordinates each value contains.</p>
+<p>A type is <strong>complete</strong> when its dtype is supplied by the
+target environment, every axis is declared, every static occurrence has
+a resolved positive extent, and every dynamic occurrence has declared
+support. Every global, parameter, and export result type
+<strong>MUST</strong> be complete.</p>
+<p>For dynamic axis <code>$a</code>, its descriptor is a logical
+function from coordinate assignments over <code>support(a)</code> to
+non-negative extents. A zero extent is valid. At each support
+coordinate, valid <code>$a</code> coordinates are
+<code>0 .. length_a(s)-1</code>.</p>
+<p>Tensor type well-formedness is:</p>
+<pre class="text"><code>WF(T[A]) iff
+    every axis in A is distinct, and
+    for every dynamic d in A: support(d) is a subset of A</code></pre>
+<p>Every global, parameter, inferred binding, and result
+<strong>MUST</strong> satisfy <code>WF</code>. A runtime descriptor
+supplies extents, not additional dependency edges. A tensor operation
+cannot remove a predecessor while retaining its dependent dynamic
+axis.</p>
+<p>Static type equality compares dtypes, axis identities, static
+extents, and the declared support of dynamic axes. At invocation time, a
+descriptor instantiates each dynamic domain. Whenever an operation
+aligns two occurrences of the same dynamic axis, their lengths
+<strong>MUST</strong> agree at every aligned support coordinate;
+otherwise invocation fails with a dynamic error.</p>
+<p>Permuting axis entries in a type or ordinary axis pattern does not
+change meaning. The dependency partial order is semantic; textual
+enumeration order is not.</p>
+<h3 id="43-element-types">4.3 Element types</h3>
+<p>A consumer <strong>MUST</strong> provide the mandatory
+<code>ttl.lang</code> types <code>bool</code>, <code>i32</code>,
+<code>f16</code>, and <code>f32</code> and may provide additional
+nominal dtypes. Their value domains are Boolean values, signed 32-bit
+two's-complement integers, IEEE 754 binary16, and IEEE 754 binary32,
+respectively. There is no implicit dtype conversion. Integer, floating,
+and Boolean literals have types <code>i32</code>, <code>f32</code>, and
+<code>bool</code>, respectively; TTL has no textual <code>f16</code>
+literal.</p>
+<p>A non-negative <code>i32</code> literal is in
+<code>0 .. 2147483647</code>. A negative literal is <code>-</code>
+followed by a magnitude in <code>1 .. 2147483648</code>. A decimal
+floating literal is converted to <code>f32</code> using IEEE 754
+round-to-nearest, ties-to-even. Overflow and underflow follow binary32
+conversion. <code>inf</code> and <code>-inf</code> denote positive and
+negative binary32 infinity. TTL has no textual NaN literal, although
+target operations and supplied values may produce NaNs.</p>
+<p>Dtypes are nominal: two dtype occurrences are equal exactly when
+their names identify the same type in the target environment.</p>
+<h2 id="5-modules-and-dataflow">5. Modules and dataflow</h2>
+<h3 id="51-globals-and-exports">5.1 Globals and exports</h3>
+<p>A global is an immutable module input with module-instance lifetime.
+The execution environment supplies one well-typed value for every global
+before an export is invoked. Globals remain direct references and are
+not added to export parameter lists. All invocations on one module
+instance observe the same global values. A host may create a different
+instance, but TTL defines no operation that mutates an existing instance
+or global.</p>
+<p>An export has complete parameter and result types. A module contains
+one or more exports, and their names are distinct. Parameters retain
+source names. Bindings may use human names or generated names such as
+<code>%10</code>; names are unique within an export and do not shadow
+parameters or globals.</p>
+<h3 id="52-bindings-constants-and-results">5.2 Bindings, constants, and
+results</h3>
+<p>A <code>let</code> is one flat, textual dataflow sequence. Each
+binding refers only to parameters, globals, or earlier bindings and
+produces one immutable value. Its type is uniquely derived from its
+right-hand side; no expected result type may supply missing type
+information. The final result contains the declared number of value
+references, in result order, and their inferred types equal the export
+result types.</p>
+<p>A literal binding produces one rank-zero tensor. TTL has no
+non-scalar tensor literal. A selector binding derives its type by
+Section 5.3. A direct target binding derives its type by Section 6.1,
+and a coordinate primitive binding by Section 7. Every binding produces
+one value; multiple export results are several graph edges, not a
+tuple-valued tensor.</p>
+<p>An export body that returns one result is a single reference. A body
+that returns multiple results is a parenthesized list of at least two
+references. Its arity and each inferred type <strong>MUST</strong> match
+the declared result list in the same order.</p>
+<h3 id="53-resolved-selectors">5.3 Resolved selectors</h3>
+<p>A selector operates on distinct static axes of an earlier value:</p>
+<pre class="ttl"><code>axis batch := 2, token := 8, hidden := 64;
+
+// x: f32[batch token hidden]
+x[token=3]    // f32[batch hidden]
+x[token=2:6]  // f32[batch token := 4 hidden]</code></pre>
+<p>For <code>a=i</code>, <code>0 &lt;= i &lt; extent(a)</code> and the
+result removes <code>a</code>. For <code>a=begin:end</code>,
+<code>0 &lt;= begin &lt; end &lt;= extent(a)</code> and the result
+retains <code>a</code> with local extent <code>end-begin</code>,
+reindexed from zero. All bounds are resolved integer literals. The
+resulting type <strong>MUST</strong> remain well formed; selecting away
+a dependency while retaining its dynamic axis is invalid. A range
+selection on a support axis restricts the dependent runtime descriptors
+to that range and reindexes their support coordinates from zero.</p>
+<h2 id="6-scalar-target-environment">6. Scalar target environment</h2>
+<h3 id="61-environment-interface">6.1 Environment interface</h3>
+<p>The consumer supplies scalar dtypes and <code>@</code> operations.
+Every referenced target has an ordered input-dtype list, one result
+dtype, and pure scalar semantics. A target may report a dynamic
+numerical-domain error for inputs outside its stated domain. A map
+target receives one element from each tensor operand in operand order.
+TTL performs no implicit scalar conversion.</p>
+<p>A direct target application lifts those scalar semantics
+pointwise:</p>
+<pre class="ttl"><code>%0 = @cast_i32_f32(count);
+%1 = @add_f32(x, bias);</code></pre>
+<p>The application axis set is the union of its operand axis sets.
+Occurrences of the same named axis align and <strong>MUST</strong> have
+compatible domains; an operand that lacks an application axis broadcasts
+along it. At each application coordinate, the target receives the
+element selected from each operand in source operand order. The result
+has the target's result dtype and the application axis set. Thus a call
+on only rank-zero operands is itself rank zero. Axis enumeration in the
+result type remains non-semantic.</p>
+<p>A direct target application <strong>MUST NOT</strong> carry an axis
+specification, <code>map</code> clause, or <code>reduce</code> clause.
+It cannot remove an axis. A call that must project or reduce coordinates
+uses <code>@einsum</code> instead.</p>
+<p>A consumer verifies and executes a module relative to one target
+environment. Changing a referenced target's signature or semantics
+changes that environment and therefore changes the program being
+consumed.</p>
+<h3 id="62-portable-ttllang-baseline">6.2 Portable <code>ttl.lang</code>
+baseline</h3>
+<p>Every target environment <strong>MUST</strong> provide the following
+names and signatures. The arithmetic names denote their conventional
+scalar operations in the stated dtype. An environment
+<strong>MUST</strong> document rounding, exceptional values, and domain
+errors for approximate operations.</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Signature</th>
+<th>Additional role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@add_f32</code></td>
+<td><code>(f32, f32) -&gt; f32</code></td>
+<td>reducer, identity <code>0.0</code></td>
+</tr>
+<tr>
+<td><code>@subtract_f32</code></td>
+<td><code>(f32, f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@multiply_f32</code></td>
+<td><code>(f32, f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@divide_f32</code></td>
+<td><code>(f32, f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@negate_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@minimum_f32</code></td>
+<td><code>(f32, f32) -&gt; f32</code></td>
+<td>reducer, identity positive infinity</td>
+</tr>
+<tr>
+<td><code>@maximum_f32</code></td>
+<td><code>(f32, f32) -&gt; f32</code></td>
+<td>reducer, identity negative infinity</td>
+</tr>
+<tr>
+<td><code>@greater_f32</code></td>
+<td><code>(f32, f32) -&gt; bool</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@exp_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@log_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@log2_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@exp2_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@ceil_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@rsqrt_f32</code></td>
+<td><code>(f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@cast_i32_f32</code></td>
+<td><code>(i32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@select_f32</code></td>
+<td><code>(bool, f32, f32) -&gt; f32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@select_i32</code></td>
+<td><code>(bool, i32, i32) -&gt; i32</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@select_bool</code></td>
+<td><code>(bool, bool, bool) -&gt; bool</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><code>exp</code> and <code>exp2</code> compute powers of
+<code>e</code> and <code>2</code>; <code>log</code> and
+<code>log2</code> are their corresponding logarithms. <code>ceil</code>
+returns the least integral value not smaller than its input, represented
+as <code>f32</code>. <code>rsqrt(x)</code> computes
+<code>1 / sqrt(x)</code>. <code>cast_i32_f32</code> converts its input
+to <code>f32</code>. Each <code>select</code> returns its second input
+when its Boolean input is true and its third input otherwise. The
+environment's documented floating-point rules refine these mathematical
+descriptions.</p>
+<p>An environment may add nominal dtypes and target operations. Such
+additions do not change TTL syntax. A module is valid only relative to
+an environment that contains every target it references.</p>
+<h3 id="63-reducers">6.3 Reducers</h3>
+<p>A reduce target has one identity and defines the meaning of reducing
+a finite multiset of scalars. Reduction is invariant under permutation:
+TTL never exposes an ordered fold. Subtraction, division, concatenation,
+and any other operation whose intended result depends on input order are
+not reducers.</p>
+<p>For an exact dtype, reducer <code>r</code> with identity
+<code>e</code> <strong>MUST</strong> form a commutative monoid over its
+semantic scalar domain. Concretely, it satisfies
+<code>r(e, x) = r(x, e) = x</code>, <code>r(x, y) = r(y, x)</code>, and
+<code>r(r(x, y), z) = r(x, r(y, z))</code>. The target environment
+asserts these laws; a consumer need not prove them.</p>
+<p>An approximate scalar operation, such as binary32 addition, need not
+be associative. For every reducer over an approximate dtype, the
+environment <strong>MUST</strong> instead provide an order-invariant
+predicate:</p>
+<pre class="text"><code>admissible_r(M, observed)</code></pre>
+<p><code>M</code> is the finite multiset of semantic inputs. The
+predicate defines all valid observations and covers numerical error,
+NaNs, infinities, signed zero, overflow, and domain failure without
+referring to an enumeration of <code>M</code>. It <strong>MUST</strong>
+admit the declared identity for an empty multiset. For an exact dtype,
+the observed value is the unique commutative-monoid reduction in the
+target's declared scalar domain.</p>
+<h2 id="7-tensor-primitives">7. Tensor primitives</h2>
+<p>This section uses ordinary set union and set difference on axis
+identities. A coordinate <strong>projection</strong> keeps only the
+coordinates named by a specified axis subset. A
+<strong>multiset</strong> is an unordered collection that may contain
+repeated scalar values.</p>
+<h3 id="71-einsum">7.1 <code>@einsum</code></h3>
+<p>An <code>@einsum</code> has one input axis pattern per operand and
+one result axis pattern:</p>
+<pre class="ttl"><code>@einsum[row shared, shared column -&gt; row column](x, weight)
+    map=@multiply_f32 reduce=@add_f32</code></pre>
+<p>An <code>@einsum</code> <strong>MUST</strong> have at least one
+operand. Its patterns contain only bare axes; extent definitions and
+axis products are invalid. The consumer checks it as follows:</p>
+<ol type="1">
+<li>Input pattern <code>i</code> names exactly the unordered axis set of
+operand <code>i</code>.</li>
+<li>Aligned occurrences of a static axis have equal extents. Aligned
+dynamic occurrences satisfy Section 4.2.</li>
+<li>The <strong>iteration set</strong> <code>I</code> is the union of
+all input axis sets.</li>
+<li>The result pattern contains distinct axes drawn from
+<code>I</code>.</li>
+<li>The <strong>reduction set</strong> is
+<code>K = I minus result_axes</code>.</li>
+</ol>
+<p>An operand missing an axis from <code>I</code> broadcasts along that
+axis. If <code>map</code> is present, its target signature is the
+operand dtypes in operand order and its result dtype is the
+<strong>mapped dtype</strong>. With one operand, an omitted
+<code>map</code> is the identity and the operand dtype is the mapped
+dtype. With two or more operands, <code>map</code> is required. TTL
+supplies no implicit multiplication.</p>
+<p>If <code>K</code> is empty, <code>reduce</code> is forbidden and the
+result dtype is the mapped dtype. If <code>K</code> is nonempty,
+<code>reduce</code> is required; it names a reducer whose input and
+result dtype are the mapped dtype. The tensor result has the result
+pattern's axis domains and that dtype. TTL supplies no implicit
+addition.</p>
+<p>When <code>K</code> is empty and <code>map</code> names a direct
+target, the expression is semantically equivalent to applying that
+target directly to the operands. A producer <strong>SHOULD</strong> emit
+the direct form because it states pointwise intent without a vacuous
+axis specification. In particular, a rank-zero cast is written
+<code>@cast_i32_f32(x)</code>, not
+<code>@einsum[ -&gt; ](x) map=@cast_i32_f32</code>.</p>
+<p>For each result coordinate <code>q</code>, every valid assignment
+<code>k</code> to <code>K</code> selects one element from each operand
+by projecting <code>(q, k)</code> onto that operand's axes. The map
+target produces one scalar. These mapped scalars form a finite multiset
+<code>M_q</code>; the result at <code>q</code> is the reducer result for
+that multiset. An empty <code>M_q</code> produces the reducer identity.
+An exact result is its commutative-monoid reduction; an approximate
+result satisfies the target's admissibility predicate. No traversal or
+reduction order is observable.</p>
+<h3 id="72-gather">7.2 <code>@gather</code></h3>
+<pre class="ttl"><code>axis batch := 2, vocabulary := 32000, token := 8;
+
+// data: f32[batch vocabulary]
+// indices: i32[batch token]
+@gather[vocabulary -&gt; token](data, indices)
+// result: f32[batch token]</code></pre>
+<p><code>@gather</code> has exactly two operands, <code>data</code> and
+<code>indices</code>, and no <code>map</code> or <code>reduce</code>
+clause. <code>indices</code> has dtype <code>i32</code>. Its axis
+specification contains one bare source axis <code>s</code> before
+<code>-&gt;</code> and a set of bare inserted axes after it; extent
+definitions and products are invalid.</p>
+<p>Let <code>D</code> be the data axis set, <code>J</code> the index
+axis set, and <code>R = D minus {s}</code>. The consumer checks:</p>
+<ol type="1">
+<li><code>s</code> occurs in <code>D</code> and not in
+<code>J</code>.</li>
+<li>Every axis in <code>J</code> that is not inserted occurs in
+<code>R</code> with a compatible domain.</li>
+<li>The inserted set is exactly <code>J minus R</code>.</li>
+<li>The inferred result type is well formed under Section 4.2.</li>
+</ol>
+<p>The result has <code>dtype(data)</code> and axes:</p>
+<pre class="text"><code>(D minus {s}) union J</code></pre>
+<p>For each result coordinate <code>q</code>, project <code>q</code>
+onto <code>J</code> and read integer <code>j</code> from
+<code>indices</code>. Project <code>q</code> onto <code>R</code>, set
+the <code>s</code> coordinate to <code>j</code>, and read that element
+of <code>data</code>. A negative or out-of-domain <code>j</code> is a
+dynamic error.</p>
+<h3 id="73-scatter">7.3 <code>@scatter</code></h3>
+<pre class="ttl"><code>axis batch := 2, token := 8, vocabulary := 32000;
+
+// base: f32[batch vocabulary]
+// updates: f32[batch token]
+// indices: i32[batch token]
+@scatter[token -&gt; vocabulary](base, updates, indices)
+    reduce=@add_f32
+// result: f32[batch vocabulary]</code></pre>
+<p><code>@scatter</code> has exactly three operands: <code>base</code>,
+<code>updates</code>, and <code>indices</code>. It has exactly one
+<code>reduce</code> clause and no <code>map</code> clause. The reducer
+is a complete target reducer whose two input dtypes and result dtype
+equal the common dtype of <code>base</code> and <code>updates</code>.
+<code>indices</code> has dtype <code>i32</code>.</p>
+<p>The axis specification contains one bare contribution-axis pattern
+before <code>-&gt;</code> and exactly one bare destination axis after
+it. Extent definitions and axis products are invalid. Let
+<code>B</code>, <code>U</code>, and <code>J</code> be the axis sets of
+<code>base</code>, <code>updates</code>, and <code>indices</code>; let
+<code>I</code> be the contribution set; let <code>s</code> be the
+destination axis; and let <code>R = U minus I</code>. The consumer
+checks:</p>
+<ol type="1">
+<li><code>s</code> occurs in <code>B</code> and occurs in neither
+<code>U</code> nor <code>J</code>.</li>
+<li><code>I</code> is a subset of both <code>U</code> and
+<code>J</code>.</li>
+<li><code>J</code> is a subset of <code>U</code>, and
+<code>J minus R = I</code>.</li>
+<li><code>B minus {s}</code> is a subset of <code>R</code>.</li>
+<li>Every aligned axis occurrence has a compatible domain under Section
+4.2.</li>
+</ol>
+<p>The result has the value dtype and axis set <code>R union {s}</code>.
+The domain of <code>s</code> comes from <code>base</code>; the domains
+of <code>R</code> come from <code>updates</code>. <code>base</code>
+broadcasts over retained axes it omits, and <code>indices</code>
+broadcasts over retained axes it omits. The base therefore supplies the
+complete destination domain, including the runtime descriptor when
+<code>s</code> is dynamic; no expected result type supplies shape
+information.</p>
+<p>For result coordinate <code>q</code>, let <code>C_q</code> be the
+finite multiset of update values whose coordinates agree with
+<code>q</code> on <code>R</code> and whose index value equals
+<code>q(s)</code>. The result is the reducer applied invariantly to</p>
+<pre class="text"><code>{ base(project(q, B)) } multiset-union C_q</code></pre>
+<p>according to Section 6.3. A coordinate with no matching update
+therefore retains its base value. Colliding updates have no writer
+order. With the additive reducer, a zero-valued base gives scatter-add
+and the value operation needed as the reverse-mode counterpart of
+<code>@gather</code>. A negative index or an index outside the
+destination domain at its retained coordinate is a dynamic error.</p>
+<h3 id="74-rearrange">7.4 <code>@rearrange</code></h3>
+<p>Every <code>@rearrange</code> is exactly one of the following
+classes. Its decomposition must be unique. It has no <code>map</code> or
+<code>reduce</code> clause and never inspects element values. It has one
+input pattern per operand. Each input pattern's denoted axis set and
+occurrence domains <strong>MUST</strong> equal its operand's type. The
+result pattern's denoted axis set and the relations below determine the
+result type.</p>
+<p>A <strong>single-source coordinate map</strong> has one operand and
+composes disjoint local relations:</p>
+<ul>
+<li>preserve one axis identity and domain;</li>
+<li>relabel one source axis as one distinct result axis with the same
+domain;</li>
+<li>split or merge one static parent and an ordered factor sequence
+declared by <code>parent := [f1 * ... * fn]</code>;</li>
+<li>remove a static extent-one source axis or insert a fresh
+<code>a := 1</code> result axis; or</li>
+<li>replicate along a fresh static result axis <code>a := N</code>,
+where <code>N &gt; 1</code>.</li>
+</ul>
+<p>For example, this expression splits <code>hidden</code> into
+<code>head</code> and <code>channel</code>:</p>
+<pre class="ttl"><code>axis batch := 2, hidden := 32, head := 4, channel := 8;
+
+// x: f32[batch hidden]
+@rearrange[
+    batch hidden := [head * channel]
+    -&gt; batch head channel
+](x)
+// result: f32[batch head channel]</code></pre>
+<p>Every input and result axis belongs to exactly one relation, and
+different relations use disjoint axes. Preserved axes have equal
+domains. A relabel is written by one unmatched bare axis on each side,
+as in <code>@rearrange[token -&gt; source](x)</code>. The two identities
+remain distinct; the operation explicitly transfers coordinates and does
+not declare an alias. Their domains are equal. Static relabels require
+equal extents. Dynamic relabels require equal support sets and transfer
+the source descriptor under the result identity. If more than one
+pairing of unmatched axes satisfies these rules, the rearrangement is
+ambiguous and invalid.</p>
+<p>In a product relation, the parent and factors are pairwise-distinct
+static axes. The parent annotation occurs on one side of
+<code>-&gt;</code>; its factors occur as axis occurrences on the
+opposite side and are metadata, not additional axes on the parent's
+side. An extent-defined factor occurrence supplies its local extent; a
+bare factor occurrence uses its declared base extent. The parent extent
+equals the product of the factor extents. No other source axis may
+disappear and no other result axis may appear. For factor extents
+<code>n_1 ... n_n</code>:</p>
+<pre class="text"><code>extent(parent) = n_1 * ... * n_n
+coord(parent) = sum(i=1..n,
+                    coord(f_i) * product(j=i+1..n, n_j))</code></pre>
+<p>The first equation is checked statically. The second is the
+mixed-radix coordinate map; the last factor varies fastest. Splitting
+uses the equation as written, and merging uses its unique inverse. A
+product has at least two factors; a one-axis relation is forbidden
+aliasing. Changing only the written order of preserved axes is the
+identity. Unit insertion and removal use their only coordinate, zero.
+Replication reads the same source element at every coordinate of the
+fresh result axis. Here <strong>fresh</strong> means absent from the
+opposite pattern, not undeclared: every axis remains declared at module
+scope.</p>
+<p>A <strong>multi-source concatenation</strong> has at least two
+operands. For a common axis set <code>C</code>, input-specific axes
+<code>s_i</code>, and fresh result axis <code>r</code>:</p>
+<pre class="ttl"><code>axis batch := 2, left := 3, right := 5, joined := 8;
+
+// a: f32[batch left], b: f32[batch right]
+@rearrange[batch left, batch right -&gt; batch joined](a, b)
+// result: f32[batch joined]</code></pre>
+<pre class="text"><code>axes(input_i) = C union {s_i}
+axes(result)  = C union {r}
+extent(r, c) = sum(i, extent(s_i, c))</code></pre>
+<p>All operands have one common dtype. The <code>s_i</code> and
+<code>r</code> identities are pairwise distinct, absent from
+<code>C</code>, and either all static or all dynamic. In the static case
+the result extent equals the sum of the input-specific extents. In the
+dynamic case they have one support set, and the result descriptor is
+their pointwise sum. Operand order concatenates coordinates within
+<code>r</code>; it does not order tensor axes. Let
+<code>offset_i(c)</code> be the sum of the extents of <code>s_j</code>
+for operands <code>j &lt; i</code> at shared support coordinate
+<code>c</code>. Result coordinate <code>r=k</code> reads the unique
+operand <code>i</code> satisfying
+<code>offset_i(c) &lt;= k &lt; offset_i(c) + extent(s_i, c)</code>, at
+source coordinate <code>s_i = k - offset_i(c)</code>.</p>
+<p><code>@rearrange</code> preserves the operand dtype. It does not
+gather, scatter, reduce, apply a scalar operation, or otherwise discard
+coordinates. Every result must be well formed, and no
+coordinate-relation provenance remains in its type.</p>
+<h2 id="8-evaluation-and-errors">8. Evaluation and errors</h2>
+<p>An invocation begins with one value for every global and export
+parameter. Those values <strong>MUST</strong> match their declared
+dtypes, static domains, and dynamic descriptor requirements before any
+result is observed.</p>
+<p>Bindings are written in dependency order. Because values and target
+operations are pure, an implementation may evaluate nodes in any order
+that follows graph dependencies. Primitive argument order remains
+semantic for scalar target signatures and concatenation operand order.
+Tensor coordinate traversal is unobservable. A reference implementation
+may choose a stable traversal, but a TTL program cannot depend on
+it.</p>
+<p>Exact reductions produce their unique scalar-domain value.
+Approximate reductions produce a value admitted by their target
+predicate.</p>
+<h3 id="81-required-static-errors">8.1 Required static errors</h3>
+<p>A conforming consumer <strong>MUST</strong> reject:</p>
+<ul>
+<li>lexical or grammatical invalidity;</li>
+<li>a duplicate, unresolved, forward, or forbidden shadowing name;</li>
+<li>an undeclared axis, invalid extent, cyclic dependency, or unresolved
+parent;</li>
+<li>an ill-formed tensor type under Section 4.2;</li>
+<li>an unknown target or incompatible target signature;</li>
+<li>an invalid primitive name, arity, axis pattern, clause, or inferred
+type;</li>
+<li>a binding whose dependencies are not earlier values; and</li>
+<li>export result arity or type disagreement.</li>
+</ul>
+<h3 id="82-required-dynamic-errors">8.2 Required dynamic errors</h3>
+<p>An invocation fails dynamically on:</p>
+<ul>
+<li>a supplied value that violates a dynamic descriptor
+requirement;</li>
+<li>incompatible lengths for aligned occurrences of one dynamic
+axis;</li>
+<li>a negative or out-of-domain gather or scatter index; or</li>
+<li>a scalar target numerical-domain failure.</li>
+</ul>
+<p>Silent positional matching, renaming, truncation, padding, wrapping,
+or clamping is forbidden unless an explicit target operation defines
+it.</p>
+<h2 id="9-conformance">9. Conformance</h2>
+<p>A producer of TTL <strong>MUST</strong> emit resolved concrete axis
+declarations, including the dynamic-axis dependency partial order,
+complete globals and export signatures, valid primitive coordinate
+relations, fixed scalar target references, and explicit result edges.
+Runtime values supply conforming dynamic descriptors. No consumer-side
+specialization or compile-time evaluation may be required to interpret
+the emitted module.</p>
+<p>An implementation may provide parsing, verification, interpretation,
+lowering, or any stated combination. Each implemented part
+<strong>MUST</strong> obey this manual and identify the target
+environment used.</p>
+<p>The language boundary permits small, independently testable
+implementation stages: tokenize and parse the complete grammar; resolve
+names and construct axis/type tables; verify bindings and infer their
+types; then interpret or lower the verified finite graph. This is
+implementation guidance, not a separate language profile or course
+requirement.</p>
+<p>TTL 0.1 artifacts remain governed by their released manual and paired
+target environment. This specification makes no compatibility claim that
+would reinterpret a TTL 0.1 artifact.</p>
+<h2 id="appendix-a-minimal-implementation-guide-non-normative">Appendix
+A. Minimal implementation guide (non-normative)</h2>
+<p>This appendix suggests one small architecture. It adds no language
+rules.</p>
+<ol type="1">
+<li><strong>Tokenize and parse.</strong> Preserve source locations on
+syntax nodes so later errors can name the offending declaration or
+expression. Do not perform type inference in the parser.</li>
+<li><strong>Build module tables.</strong> Record axes, globals, exports,
+dtypes, and target signatures. Reject duplicate declarations. Compute
+the transitive support set of every dynamic axis while detecting
+dependency cycles.</li>
+<li><strong>Represent a type directly.</strong> A useful representation
+is <code>(dtype, {axis_identity: domain})</code>; do not use an ordered
+tuple of extents as semantic type identity. An implementation may retain
+written order for diagnostics or host-data decoding, but type equality
+ignores it.</li>
+<li><strong>Verify each export topologically.</strong> Seed a value
+table with globals and parameters. For each binding, resolve its
+operands, apply the selector or primitive rule in Sections 5 and 7, and
+record the uniquely inferred result type. Finally compare the referenced
+result types with the declared export results.</li>
+<li><strong>Interpret by coordinates.</strong> Represent a coordinate as
+a map from axis identity to integer. Implement <code>@einsum</code> by
+projection and finite-domain enumeration, <code>@gather</code> by
+replacing one coordinate, <code>@scatter</code> by grouping updates at
+their indexed destination, selectors by restriction and reindexing, and
+<code>@rearrange</code> by its explicit coordinate relation.</li>
+<li><strong>Separate static and dynamic failures.</strong> Reject
+invalid graphs before an invocation. Check supplied shapes, segment
+descriptors, gather and scatter indices, and scalar numerical domains
+while evaluating a particular invocation.</li>
+</ol>
+<p>A useful first conformance ladder is: scalar identity; elementwise
+unary map; broadcast binary map; one-axis reduction; matrix
+multiplication; scalar and range selection; gather; scatter with and
+without collisions; split/merge rearrangement; concatenation; and a
+dynamic-axis example. At each rung, test both the inferred tensor type
+and the coordinate values, plus at least one required rejection.</p>
+</body>
+</html>
