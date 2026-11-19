@@ -5,7 +5,7 @@
   "themes": [
     {
       "id": "eda",
-      "title": "EDA",
+      "title": "Electronic Design Automation",
       "description": "Design automation must make a growing space of hardware choices tractable. These works connect executable specifications to implementation, and reformulate synthesis and placement so that better designs remain practical to compute."
     },
     {
@@ -22,9 +22,36 @@
       "id": "computing",
       "title": "Custom Computing",
       "description": "Specialization pays when the organization of hardware matches the structure of the work. These projects examine where data moves, where state lives, and when computation advances\u2014and how to preserve a custom design as its implementation technology changes."
+    },
+    {
+      "id": "coding",
+      "title": "Channel Modeling and Error Control Coding",
+      "description": ""
     }
   ],
   "publications": [
+    {
+      "theme": "coding",
+      "title": "A Black-box Model of Memory Life-span for NAND Flash Devices",
+      "authors": "Shu-Yi Jack Wong",
+      "venue": "PhD dissertation \u00b7 University of Toronto",
+      "year": 2022,
+      "citations": null,
+      "url": "https://utoronto.scholaris.ca/server/api/core/bitstreams/2a2ffb1c-73e8-45cd-b646-e4d2e980cc85/content",
+      "scholar_id": null,
+      "repository_url": "https://hdl.handle.net/1807/123509"
+    },
+    {
+      "theme": "coding",
+      "title": "FPGA Micro-Architecture-Code Co-Design For Low-Density Parity-Check Codes For Flash Memories",
+      "authors": "Reza Nakhjavani",
+      "venue": "PhD dissertation \u00b7 University of Toronto",
+      "year": 2021,
+      "citations": null,
+      "url": "https://utoronto.scholaris.ca/server/api/core/bitstreams/2e78113f-d374-40d7-8030-14c6d2347327/content",
+      "scholar_id": null,
+      "repository_url": "https://hdl.handle.net/1807/106339"
+    },
     {
       "theme": "eda",
       "title": "Register Pressure Aware Scheduling for High Level Synthesis",
@@ -44,16 +71,6 @@
       "citations": 8,
       "url": "https://www.eecg.toronto.edu/~brown/papers/aspdac07-ling.pdf",
       "scholar_id": "17809966162877568785"
-    },
-    {
-      "theme": "computing",
-      "title": "Rotary Register File: A Micro-Architectural Primitive on FPGA",
-      "authors": "R. Nakhjavani, J. Zhu",
-      "venue": "FCCM",
-      "year": 2020,
-      "citations": 1,
-      "url": "https://www.fccm.org/past/2020/proceedings/2020/pdfs/FCCM2020-65FOvhMqzyMYm99lfeVKyl/580300a228/580300a228.pdf",
-      "scholar_id": "17446113304760413588"
     },
     {
       "theme": "computing",
